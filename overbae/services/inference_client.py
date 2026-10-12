@@ -239,7 +239,7 @@ class InferenceClient:
         elif not weights_path and row is not None:
             weights_path = row.weights_path
 
-        if self._base_url:
+        if self._base_url and not (row is not None and row.inference_contract == "decision"):
             try:
                 del_headers = dict(self._headers)
                 if weights_path:

@@ -8,7 +8,6 @@ import { CreateRunDialog } from "@/components/evaluations/create-run-dialog";
 import { EvalSetDetailDialog } from "@/components/evaluations/eval-set-detail-dialog";
 import { RunsTable } from "@/components/evaluations/runs-table";
 import { TaskEvalLibrary } from "@/components/evaluations/task-eval-library";
-import { DecisionComparisons } from "@/components/model-workflows/decision-comparisons";
 import { ProjectRequiredEmptyState } from "@/components/project-required-empty-state";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +20,7 @@ import { Icon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageShell } from "@/components/ui/page-shell";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import {
   Table,
   TableBody,
@@ -36,6 +36,7 @@ import {
   useEvaluatorScoreHistoryQuery,
   useProjectCapabilitiesQuery,
 } from "@/hooks/use-evaluations";
+import { useTableSort } from "@/hooks/use-table-sort";
 import { featureFlags } from "@/lib/feature-flags";
 import { errorMessage, notify } from "@/lib/notify";
 import { type EvaluationsSearch, evaluationsSearchSchema } from "@/lib/schemas";
@@ -91,7 +92,7 @@ function EvaluationsPage() {
       search: (prev) => ({
         ...prev,
         capability: next === "library" ? prev.capability : undefined,
-        view: next as "sets" | "runs" | "library" | "decisions",
+        view: next as "sets" | "runs" | "library",
       }),
     });
   const setCapabilityFilter = (next: string | undefined) =>
@@ -109,7 +110,6 @@ function EvaluationsPage() {
             <Tabs className="w-auto min-w-0" onValueChange={setView} value={activeView}>
               <TabsList className="h-auto min-h-9 flex-wrap justify-start">
                 <TabsTrigger value="runs">Runs</TabsTrigger>
-                <TabsTrigger value="decisions">Decisions</TabsTrigger>
                 <TabsTrigger value="sets">Eval sets</TabsTrigger>
                 <TabsTrigger value="library">Eval library</TabsTrigger>
               </TabsList>
@@ -129,9 +129,6 @@ function EvaluationsPage() {
       variant="full"
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        {activeView === "decisions" && (
-          <DecisionComparisons key={projectId} projectId={projectId} />
-        )}
         {activeView === "sets" && (
           <div className="flex flex-col gap-3">
             <div>
@@ -144,6 +141,7 @@ function EvaluationsPage() {
           <RunsTable
             action={<CreateRunDialog key={projectId} projectId={projectId} />}
             filters={search}
+            key={projectId}
             onSearchChange={patchSearch}
             page={page}
             pageSize={pageSize}
@@ -265,6 +263,9 @@ function CapabilitySetsGroup({
   projectId: string;
 }) {
   const navigate = Route.useNavigate();
+  const { sort, onSort, sortRows } = useTableSort<
+    "name" | "generativeCount" | "traceScoringCount" | "isActive" | "score"
+  >();
   const [selectedSet, setSelectedSet] = useState<EvalSet | null>(null);
   const { data: scoreHistory } = useEvaluatorScoreHistoryQuery(capabilityId);
   const deleteSet = useDeleteEvalSetMutation(projectId, capabilityId);
@@ -312,16 +313,42 @@ function CapabilitySetsGroup({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Set</TableHead>
-            <TableHead className="text-center">Generative</TableHead>
-            <TableHead className="text-center">Trace scoring</TableHead>
-            <TableHead className="text-center">Status</TableHead>
-            <TableHead className="text-center">Latest score</TableHead>
+            <SortableHeader label="Set" onSort={onSort} sort={sort} sortKey="name" />
+            <SortableHeader
+              centered
+              label="Generative"
+              onSort={onSort}
+              sort={sort}
+              sortKey="generativeCount"
+            />
+            <SortableHeader
+              centered
+              label="Trace scoring"
+              onSort={onSort}
+              sort={sort}
+              sortKey="traceScoringCount"
+            />
+            <SortableHeader
+              centered
+              label="Status"
+              onSort={onSort}
+              sort={sort}
+              sortKey="isActive"
+            />
+            <SortableHeader
+              centered
+              label="Latest score"
+              onSort={onSort}
+              sort={sort}
+              sortKey="score"
+            />
             <TableHead className="w-16 text-center">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sets.map((set) => {
+          {sortRows(sets, (set, key) =>
+            key === "score" ? setLatestScore(set, latestByName) : set[key]
+          ).map((set) => {
             const score = setLatestScore(set, latestByName);
             return (
               <TableRow

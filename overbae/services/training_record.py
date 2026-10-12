@@ -7,6 +7,7 @@ from overbae.modal.model_registry import get_model_config_any_backend
 from overbae.services import native_evaluation, training_release
 from overbae.services.compute_costs import training_cost
 from overbae.services.training_contract import contract, selection_record
+from overbae.services.training_labels import prediction_labels
 
 EVALUATION_CHOICES = (
     "eval_model_before",
@@ -61,6 +62,7 @@ def run_record(job):
         "name": job.name,
         "status": job.status,
         "contract": contract(job.cell, job.hyperparameters),
+        "prediction_labels": prediction_labels(job),
         "requested": requested or None,
         "effective": job.effective_configuration or None,
         "provider_submission": job.provider_submission or None,

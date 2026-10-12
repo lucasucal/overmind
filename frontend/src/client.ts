@@ -44,6 +44,7 @@ import {
   EvaluatorsApi,
   FeedbackApi,
   FinetuningJobsApi,
+  InferenceRequestsApi,
   McpOauthApi,
   ModelsApi,
   NativeEvaluationsApi,
@@ -428,6 +429,7 @@ export class API {
   datasetPipelineBindings: DatasetPipelineBindingsApi;
   datasetTransfers: DatasetTransfersApi;
   deployedModels: DeployedModelsApi;
+  inferenceRequests: InferenceRequestsApi;
   feedback: FeedbackApi;
   finetuningJobs: FinetuningJobsApi;
   uploads: UploadsApi;
@@ -467,6 +469,7 @@ export class API {
     this.datasetPipelineBindings = new DatasetPipelineBindingsApi(this.cfg);
     this.datasetTransfers = new DatasetTransfersApi(this.cfg);
     this.deployedModels = new DeployedModelsApi(this.cfg);
+    this.inferenceRequests = new InferenceRequestsApi(this.cfg);
     this.feedback = new FeedbackApi(this.cfg);
     this.finetuningJobs = new FinetuningJobsApi(this.cfg);
     this.uploads = new UploadsApi(this.cfg);

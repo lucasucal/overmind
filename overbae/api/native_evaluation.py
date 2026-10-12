@@ -13,10 +13,12 @@ from overbae.api.credit_gate import require_credits
 from overbae.api.scoping import project_ids_for
 from overbae.core.errors import InputValidationError
 from overbae.models import Cell, FinetuningJob, NativeEvaluationPlan, Project
+from overbae.services.datasets import use
 from overbae.services.datasets.lifecycle import DatasetError
 from overbae.services.decision_providers import catalog
 from overbae.services.native_evaluation import (
     create_plan,
+    delete,
     directory,
     launch,
     pause,
@@ -24,6 +26,7 @@ from overbae.services.native_evaluation import (
     resume,
     reuse_predictions,
 )
+from overbae.services.native_evaluation_monitor import inspect
 from overbae.tasks.native_evaluation import advance_plan
 
 logger = logging.getLogger(__name__)
@@ -40,7 +43,34 @@ class NativeEvaluationRequestSerializer(serializers.Serializer):
     final_cell = serializers.UUIDField()
 
 
+class NativeEvaluationSuiteSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    version = serializers.CharField()
+    title = serializers.CharField()
+    rows = serializers.IntegerField()
+    dataset_id = serializers.UUIDField()
+    dataset_name = serializers.CharField()
+    capability_id = serializers.UUIDField(allow_null=True)
+    capability_name = serializers.CharField()
+
+    def to_representation(self, cell):
+        dataset = cell.dataset
+        return super().to_representation(
+            {
+                **use.describe(cell),
+                "dataset_name": dataset.name,
+                "capability_id": dataset.capability_id,
+                "capability_name": dataset.capability.name if dataset.capability_id else "",
+            }
+        )
+
+
 class NativeEvaluationSerializer(serializers.ModelSerializer):
+    final_suite = NativeEvaluationSuiteSerializer(source="final_cell", read_only=True)
+    calibration_suite = NativeEvaluationSuiteSerializer(
+        source="calibration_cell", read_only=True, allow_null=True
+    )
+
     class Meta:
         model = NativeEvaluationPlan
         fields = [
@@ -50,6 +80,8 @@ class NativeEvaluationSerializer(serializers.ModelSerializer):
             "request_key",
             "final_cell",
             "calibration_cell",
+            "final_suite",
+            "calibration_suite",
             "job",
             "state",
             "config",
@@ -57,6 +89,7 @@ class NativeEvaluationSerializer(serializers.ModelSerializer):
             "calibration",
             "results",
             "error",
+            "deleted_at",
             "created_at",
             "updated_at",
         ]
@@ -111,8 +144,96 @@ class DecisionCatalogRequestSerializer(serializers.Serializer):
     project = serializers.UUIDField()
 
 
+class NativeMonitorQuerySerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=["final", "calibration"], default="final")
+    offset = serializers.IntegerField(min_value=0, default=0)
+    limit = serializers.IntegerField(min_value=1, max_value=100, default=25)
+    key = serializers.CharField(max_length=128, required=False)
+    search = serializers.CharField(max_length=256, required=False, allow_blank=True)
+    participant = serializers.CharField(max_length=64, required=False)
+    outcome = serializers.ChoiceField(
+        choices=["all", "correct", "incorrect", "missing", "unscored"], default="all"
+    )
+
+
+class NativeLiveMetricSerializer(serializers.Serializer):
+    mean = serializers.FloatField()
+    decisions = serializers.IntegerField()
+
+
+class NativeBenchmarkProgressSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    expected = serializers.IntegerField()
+    received = serializers.IntegerField()
+    scored = serializers.IntegerField()
+    invalid = serializers.IntegerField()
+    incompatible = serializers.IntegerField()
+    raw = serializers.DictField(child=NativeLiveMetricSerializer())
+    calibrated = serializers.DictField(child=NativeLiveMetricSerializer())
+
+
+class NativeModelProgressSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    name = serializers.CharField()
+    expected = serializers.IntegerField()
+    received = serializers.IntegerField()
+    scored = serializers.IntegerField()
+    invalid = serializers.IntegerField()
+    incompatible = serializers.IntegerField()
+    benchmarks = NativeBenchmarkProgressSerializer(many=True)
+
+
+class NativeCallProgressSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    name = serializers.CharField()
+    state = serializers.CharField()
+    stage = serializers.CharField()
+    progress = serializers.JSONField()
+    observed_at = serializers.DateTimeField(allow_null=True)
+    error = serializers.CharField(allow_blank=True)
+    progress_error = serializers.CharField(allow_blank=True)
+
+
+class NativeSamplePredictionSerializer(serializers.Serializer):
+    raw = serializers.JSONField(allow_null=True)
+    calibrated = serializers.JSONField(allow_null=True)
+    metrics = serializers.DictField(child=serializers.FloatField())
+    calibrated_metrics = serializers.DictField(child=serializers.FloatField())
+    error = serializers.CharField(allow_blank=True)
+
+
+class NativeSampleSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    index = serializers.IntegerField()
+    benchmark = serializers.CharField()
+    input = serializers.JSONField(allow_null=True)
+    reference = serializers.JSONField(allow_null=True)
+    error = serializers.CharField(allow_blank=True)
+    predictions = serializers.DictField(child=NativeSamplePredictionSerializer())
+
+
+class NativeMonitorSerializer(serializers.Serializer):
+    evaluation = serializers.UUIDField()
+    evaluation_state = serializers.CharField()
+    role = serializers.CharField()
+    state = serializers.CharField()
+    error = serializers.CharField(allow_blank=True)
+    updated_at = serializers.DateTimeField(allow_null=True)
+    provisional = serializers.BooleanField()
+    calibration_fitted = serializers.BooleanField()
+    arms = NativeModelProgressSerializer(many=True)
+    calls = NativeCallProgressSerializer(many=True)
+    count = serializers.IntegerField()
+    offset = serializers.IntegerField()
+    limit = serializers.IntegerField()
+    samples = NativeSampleSerializer(many=True)
+
+
 class NativeEvaluationViewSet(
-    mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
 ):
     serializer_class = NativeEvaluationSerializer
     filterset_fields = ["project", "state"]
@@ -121,9 +242,35 @@ class NativeEvaluationViewSet(
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return NativeEvaluationPlan.objects.none()
-        return NativeEvaluationPlan.objects.filter(
-            project_id__in=project_ids_for(self.request.user, self.request.auth)
-        ).order_by("-created_at")
+        queryset = (
+            NativeEvaluationPlan.objects.filter(
+                project_id__in=project_ids_for(self.request.user, self.request.auth)
+            )
+            .select_related(
+                "final_cell__dataset__capability", "calibration_cell__dataset__capability"
+            )
+            .order_by("-created_at")
+        )
+        return (
+            queryset if self.action in {"destroy", "report"} else queryset.filter(deleted_at=None)
+        )
+
+    def perform_destroy(self, instance):
+        try:
+            delete(instance)
+        except InputValidationError as exc:
+            raise ValidationError(exc.detail) from None
+
+    @extend_schema(parameters=[NativeMonitorQuerySerializer], responses=NativeMonitorSerializer)
+    @action(detail=True, methods=["get"], pagination_class=None, filter_backends=[])
+    def monitor(self, request, pk=None):
+        query = NativeMonitorQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        try:
+            result = inspect(self.get_object(), **query.validated_data)
+        except InputValidationError as exc:
+            raise ValidationError(exc.detail) from None
+        return Response(NativeMonitorSerializer(result).data)
 
     @extend_schema(
         parameters=[DecisionCatalogRequestSerializer],

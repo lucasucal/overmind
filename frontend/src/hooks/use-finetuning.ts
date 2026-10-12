@@ -65,13 +65,19 @@ export function defaultFinetuneName({
 
 /** Derived from the cached data alone, so every observer of the key agrees. */
 export function finetuningJobsPollInterval(
-  results: Array<{ status: string; nativeEvaluation?: { state?: string } | null }> | undefined
+  results:
+    | Array<{
+        status: string;
+        nativeEvaluation?: { state?: string; deletedAt?: Date | null } | null;
+      }>
+    | undefined
 ): number | false {
   if (!results) return 5_000;
   return results.some(
     (j) =>
       !isTerminalFinetuningStatus(j.status) ||
       (j.nativeEvaluation?.state != null &&
+        !j.nativeEvaluation.deletedAt &&
         !["completed", "failed", "submission_unknown"].includes(String(j.nativeEvaluation.state)))
   )
     ? 5_000
@@ -92,6 +98,7 @@ export const useFinetuningJobsQuery = (projectId: string | undefined) =>
   });
 
 export interface FinetuningRunsQueryParams {
+  ordering?: import("@/openapi").FinetuningJobsRunsListOrderingEnum;
   projectId: string | undefined;
   page: number;
   pageSize: number;
@@ -101,10 +108,9 @@ export interface FinetuningRunsQueryParams {
   baseModel?: string;
 }
 
-/** Each run carries its complete job set, so per-run aggregates cover the whole
- *  run; `count` counts runs. Rows are always newest-first — the endpoint
- *  accepts `?ordering=` and ignores it, so none is sent. */
+/** Each page carries complete runs; sorting precedes pagination. */
 export const useFinetuningRunsQuery = ({
+  ordering,
   projectId,
   page,
   pageSize,
@@ -119,6 +125,7 @@ export const useFinetuningRunsQuery = ({
       apiClient.finetuningJobs.finetuningJobsRunsList({
         baseModel: baseModel || undefined,
         dataset: dataset || undefined,
+        ordering,
         page,
         pageSize,
         project: projectId,
@@ -127,6 +134,7 @@ export const useFinetuningRunsQuery = ({
       }),
     queryKey: [
       "finetuning-runs",
+      ordering ?? null,
       projectId,
       page,
       pageSize,
@@ -159,7 +167,7 @@ export const useFinetuningRunJobsQuery = (runId: string | undefined) =>
       });
       if (page.results.length > 0) return page.results;
       const job = await apiClient.finetuningJobs.finetuningJobsRetrieve({ id: runId! });
-      return [job as unknown as FinetuningJobList];
+      return [{ ...job, trainingContract: job.record?.contract } as unknown as FinetuningJobList];
     },
     queryKey: ["finetuning-run-jobs", runId],
     refetchInterval: (q) => backoffPolling(q, () => finetuningJobsPollInterval(q.state.data)),

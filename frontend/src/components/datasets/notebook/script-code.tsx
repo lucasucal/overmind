@@ -128,7 +128,12 @@ export function ScriptCode({
   };
 
   return (
-    <div className="flex min-w-0 gap-3">
+    <div
+      aria-label={ariaLabel}
+      className="nodrag nopan nowheel flex max-h-80 min-w-0 gap-3 overflow-auto overscroll-contain"
+      role="region"
+      tabIndex={editable ? undefined : 0}
+    >
       <ol className={cn("w-5 shrink-0 select-none text-right text-muted-foreground/70", METRICS)}>
         {lines.map((_, index) => (
           <li key={index}>{index + 1}</li>
@@ -163,10 +168,7 @@ export function ScriptCode({
             />
           </>
         ) : (
-          <pre
-            aria-label={ariaLabel}
-            className={cn("whitespace-pre-wrap break-words text-foreground/90", METRICS)}
-          >
+          <pre className={cn("whitespace-pre-wrap break-words text-foreground/90", METRICS)}>
             <code>{nodes}</code>
           </pre>
         )}

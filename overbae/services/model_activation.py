@@ -49,6 +49,10 @@ def start_activation(capability_id, target_id) -> ModelActivation | None:
             or not capability.is_current
         ):
             raise InputValidationError("Select a ready deployment in this capability's project.")
+        if target.inference_contract != "chat":
+            raise InputValidationError(
+                "Decision deployments use typed inference, not the chat capability alias."
+            )
         if activation and activation.stage in ACTIVE_STAGES:
             if activation.target_id == target.pk:
                 return activation

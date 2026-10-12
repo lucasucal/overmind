@@ -1,11 +1,6 @@
 import { type ReactNode, useId, useState } from "react";
 
-import {
-  EvidencePanel,
-  ExcludedSummary,
-  MatchScore,
-  UngradedNote,
-} from "@/components/finetuning/train/evidence";
+import { EvidencePanel, ExcludedSummary, MatchScore } from "@/components/finetuning/train/evidence";
 import { Column, FactLine, type Segment, SplitBar } from "@/components/finetuning/train/field";
 import {
   clampBatchSize,
@@ -49,7 +44,7 @@ const CLASSIFIED_FROM: Record<TaskTypeSourceEnum, string> = {
   declared_contract: "Declared by the dataset's decision contract",
   heuristic: "Classified from dataset structure",
   semantic: "Classified from dataset content",
-  unknown: "Capability task could not be classified from codebase context",
+  unknown: "Task has not been classified from available context",
 };
 
 function compactTokens(tokens: number): string {
@@ -95,6 +90,13 @@ function AnalysisHeader({
 
   return (
     <dl className="flex shrink-0 flex-col gap-1.5">
+      {format && format !== "unknown" && (
+        <MetaRow label="Training mode">
+          <span className="text-sm text-foreground">
+            {format === "decision" ? "Decision" : "Generative"}
+          </span>
+        </MetaRow>
+      )}
       <MetaRow label="Task type">
         <FactLine
           className="min-h-5 text-sm text-foreground"
@@ -104,11 +106,15 @@ function AnalysisHeader({
               key="type"
               title={CLASSIFIED_FROM[rec.taskTypeSource]}
             >
-              {humanizeKey(rec.taskType || "unknown")}
+              {rec.taskType && rec.taskType !== "unknown"
+                ? humanizeKey(rec.taskType)
+                : "Not classified"}
             </span>,
-            rec.taskTypeSource === "capability" || rec.taskTypeSource === "unknown"
-              ? "Capability context"
-              : "Dataset",
+            rec.taskTypeSource === "unknown"
+              ? null
+              : rec.taskTypeSource === "capability"
+                ? "Capability context"
+                : "Dataset",
           ]}
         />
       </MetaRow>
@@ -438,27 +444,18 @@ function ModelRow({
               matchPool={draft.matchPool}
               matchRank={draft.matchRank}
             />
-            {estimate?.forecast && (
-              <span
-                className="text-xs text-muted-foreground"
-                title={JSON.stringify(estimate.forecast)}
-              >
-                {estimate.forecast.basis === "unmeasured_recipe"
-                  ? "Cost uncalibrated for this recipe"
-                  : `${estimate.forecast.gpu_count} × ${estimate.forecast.gpu_type} · training GPU estimate`}{" "}
-                · other costs pending
-              </span>
-            )}
             {estimate?.costEstimate && (
               <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
                 <CreditsAmount usd={estimate.costEstimate.usd} />
               </span>
             )}
-            {estimate?.timeEstimate && (
-              <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-                ~{estimate.timeEstimate.human}
-              </span>
-            )}
+            {estimate?.timeEstimate &&
+              (estimate.timeEstimate.seconds != null ||
+                estimate.forecast?.training_seconds != null) && (
+                <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                  ~{estimate.timeEstimate.human}
+                </span>
+              )}
             {canRemove && (
               <Button
                 aria-label={`Remove ${draft.displayName}`}
@@ -471,7 +468,6 @@ function ModelRow({
             )}
           </div>
 
-          {draft.evidence.length === 0 && <UngradedNote className="mt-1.5" />}
           {servingContext && (
             <p className="mt-1.5 text-xs text-muted-foreground">
               Serving context {servingContext.maxModelLen.toLocaleString()} tokens
@@ -597,7 +593,7 @@ export function ModelsPanel({ wizard }: { wizard: TrainWizard }) {
             <AnalysisHeader
               benchmarkCount={benchmarkCount}
               composition={composition}
-              format={stats.format}
+              format={validation?.format ?? stats.format}
               rec={rec}
             />
           )}

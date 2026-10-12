@@ -6,9 +6,11 @@ import { backoffPolling } from "@/lib/poll";
 import type {
   AuthorJudgeEvaluatorRequestRequest,
   EvalRunList,
-  EvalRunsListStatusEnum,
+  EvalRunsActivityListOrderingEnum,
+  EvalRunsActivityListStatusEnum,
   EvalSetAddMembersRequestRequest,
   EvalSetRequest,
+  EvaluationActivity,
   GenerateEvaluatorPromptRequestRequest,
   PaginatedEvalRunListList,
   PatchedEvalSetMemberUpdateRequest,
@@ -265,7 +267,7 @@ export type EvalRunsQueryParams = {
   pageSize: number;
   ordering?: string;
   search?: string;
-  status?: EvalRunsListStatusEnum | "";
+  status?: EvalRunsActivityListStatusEnum | "";
   capability?: string;
   dataset?: string;
 };
@@ -283,13 +285,13 @@ export const useEvalRunsQuery = ({
   useQuery({
     enabled: !!projectId,
     queryFn: () =>
-      apiClient.evalRuns.evalRunsList({
+      apiClient.evalRuns.evalRunsActivityList({
         capability: capability || undefined,
         dataset: dataset || undefined,
-        ordering: ordering || undefined,
+        ordering: (ordering as EvalRunsActivityListOrderingEnum) || undefined,
         page,
         pageSize,
-        project: projectId,
+        project: projectId!,
         search: search?.trim() || undefined,
         status: status || undefined,
       }),
@@ -308,7 +310,11 @@ export const useEvalRunsQuery = ({
       backoffPolling(q, () => {
         const results = q.state.data?.results;
         if (!results) return 6_000;
-        return results.some((r) => isActiveRunStatus(r.status)) ? 3_500 : false;
+        return results.some((r) =>
+          ["pending", "running", "preparing", "queued", "waiting_for_checkpoint"].includes(r.status)
+        )
+          ? 3_500
+          : false;
       }),
   });
 
@@ -317,7 +323,7 @@ export const useEvalRunsQuery = ({
 export const useEvalRunDatasetsQuery = (projectId: string | undefined) =>
   useQuery({
     enabled: !!projectId,
-    queryFn: () => apiClient.evalRuns.evalRunsDatasetsRetrieve({ project: projectId! }),
+    queryFn: () => apiClient.evalRuns.evalRunsActivityDatasetsList({ project: projectId! }),
     queryKey: ["eval-runs", "datasets", projectId],
   });
 
@@ -393,11 +399,21 @@ export const useCancelEvalRunMutation = (projectId: string | undefined) => {
 export const useDeleteEvalRunMutation = (projectId: string | undefined) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiClient.evalRuns.evalRunsDestroy({ id }),
-    onError: (e) => notify.error(e, "Couldn't delete the run"),
-    onSuccess: () => {
+    mutationFn: ({ id, kind }: Pick<EvaluationActivity, "id" | "kind">) =>
+      kind === "decision"
+        ? apiClient.nativeEvaluations.nativeEvaluationsDestroy({ id })
+        : apiClient.evalRuns.evalRunsDestroy({ id }),
+    onSuccess: (_data, { id, kind }) => {
       qc.invalidateQueries({ queryKey: ["eval-runs", projectId] });
       qc.invalidateQueries({ queryKey: ["eval-runs", "all", projectId] });
+      qc.invalidateQueries({ queryKey: ["eval-runs", "datasets", projectId] });
+      qc.removeQueries({ queryKey: ["eval-run", id] });
+      qc.removeQueries({ queryKey: ["decision-comparison", id] });
+      if (kind === "decision") {
+        qc.invalidateQueries({ queryKey: ["finetuning-jobs"] });
+        qc.invalidateQueries({ queryKey: ["finetuning-runs"] });
+        qc.invalidateQueries({ queryKey: ["finetuning-job"] });
+      }
     },
   });
 };

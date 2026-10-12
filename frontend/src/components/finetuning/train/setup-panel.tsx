@@ -27,7 +27,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { count } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import { benchmarkContextStatus, contextStatusLabel } from "./context-checks";
-import { MonitoringControls } from "./monitoring-controls";
 
 /** Backend findings read `"<locator>: <reason>"`. */
 function splitFinding(text: string): [string | null, string] {
@@ -236,9 +235,6 @@ export function SetupPanel({
           </Field>
         )}
 
-        {section === "data" && wizard.monitoring && (
-          <MonitoringControls onChange={wizard.setMonitoring} value={wizard.monitoring} />
-        )}
         {section === "evaluation" &&
           (wizard.nativeDecision ? (
             <div className="sm:col-span-2 text-sm">

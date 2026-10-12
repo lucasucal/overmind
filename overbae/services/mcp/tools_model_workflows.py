@@ -1,3 +1,4 @@
+import json
 import logging
 
 from asgiref.sync import sync_to_async
@@ -10,6 +11,7 @@ from overbae.services import (
     decision_performance,
     model_workflows,
     native_evaluation,
+    native_evaluation_monitor,
     training_experiments,
 )
 from overbae.services.datasets import exploration, partition_plans
@@ -24,6 +26,8 @@ from overbae.services.mcp.contracts.model_workflows import (
     DecisionCatalogOutput,
     DeriveDatasetInput,
     ExploreDatasetInput,
+    InspectComparisonInput,
+    InspectComparisonOutput,
     LaunchComparisonInput,
     LaunchExperimentInput,
     ListWorkflowsInput,
@@ -222,6 +226,8 @@ def list_workflows(payload, context):
         .objects.filter(project=context.project)
         .order_by("-created_at")
     )
+    if payload.kind == "native_evaluation":
+        query = query.filter(deleted_at=None)
     total = query.count()
     records = list(query[payload.offset : payload.offset + payload.limit])
     return WorkflowListOutput(
@@ -290,11 +296,39 @@ def handler(function):
     return invoke
 
 
+def inspect_comparison(payload, context):
+    plan = workflow(context, "native_evaluation", payload.evaluation)
+    monitoring = native_evaluation_monitor.inspect(
+        plan, **payload.model_dump(exclude={"evaluation"})
+    )
+    if len(json.dumps(monitoring).encode()) > 32 * 1024:
+        raise MCPError(
+            "result_too_large",
+            "Select fewer samples with limit, or inspect one exact key. No values were clipped.",
+        )
+    return InspectComparisonOutput(
+        summary=f"{plan.name}: {plan.state}; {payload.role} observations",
+        monitoring=monitoring,
+        resource_links=[resource_link("jobs", f"native_evaluation/{plan.pk}", plan.name[:160])],
+    )
+
+
 def register_model_workflow_tools(catalog):
     # The catalog imports registrars before registering their definitions.
     from overbae.services.mcp.catalog import ToolDefinition
 
     definitions = [
+        (
+            "inspect_native_evaluation",
+            "Inspect benchmark progress and samples",
+            "Read recorded model stages, metrics, coverage and frozen input/reference/probability samples. Search inputs/benchmark names and filter raw outcomes before pagination; participant scopes outcomes, otherwise any model may match. Soft targets are neither correct nor incorrect. Aggregate metrics remain unfiltered. An exact key (including 0) excludes filters. Calibration remains in-sample. Reads may index retained evidence, never invoke inference.",
+            InspectComparisonInput,
+            InspectComparisonOutput,
+            inspect_comparison,
+            True,
+            "free",
+            "overmind:read",
+        ),
         (
             "prepare_native_evaluation",
             "Prepare comparison inputs",

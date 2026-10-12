@@ -29,6 +29,7 @@ import { lazyChart } from "@/components/ui/lazy-chart";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SearchInput } from "@/components/ui/search-input";
 import { SelectableCard, SelectableCardGroup } from "@/components/ui/selectable-card";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import { LoadingState, Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -51,6 +52,7 @@ import {
   useUpdateEvalSetMemberMutation,
 } from "@/hooks/use-evaluations";
 import { useGuestGate } from "@/hooks/use-guest-gate";
+import { useTableSort } from "@/hooks/use-table-sort";
 import { isActiveEvalPreloadStatus, resolveEvalPreloadStatus } from "@/lib/eval-preload";
 import { notify } from "@/lib/notify";
 import { PROSE } from "@/lib/typography";
@@ -170,6 +172,7 @@ export function EvaluatorsTab({ capabilityId, capability, projectId }: Evaluator
   const preloadActive = isActiveEvalPreloadStatus(preloadStatus);
   const preloadError = preloadQuery.data?.error;
 
+  const { sort, onSort, sortRows } = useTableSort<"name" | "kind" | "score" | "enabled">();
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newSetName, setNewSetName] = useState("");
@@ -450,9 +453,21 @@ export function EvaluatorsTab({ capabilityId, capability, projectId }: Evaluator
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="text-center">Kind</TableHead>
-                    <TableHead className="w-36 text-center">
+                    <SortableHeader label="Name" onSort={onSort} sort={sort} sortKey="name" />
+                    <SortableHeader
+                      className="text-center"
+                      label="Kind"
+                      onSort={onSort}
+                      sort={sort}
+                      sortKey="kind"
+                    />
+                    <SortableHeader
+                      className="w-36 text-center"
+                      label="Eval score"
+                      onSort={onSort}
+                      sort={sort}
+                      sortKey="score"
+                    >
                       {role === "trace_scoring" ? (
                         <span
                           className="inline-flex items-center gap-1"
@@ -466,13 +481,27 @@ export function EvaluatorsTab({ capabilityId, capability, projectId }: Evaluator
                       ) : (
                         "Eval score"
                       )}
-                    </TableHead>
-                    <TableHead className="w-20 text-center">Enabled</TableHead>
+                    </SortableHeader>
+                    <SortableHeader
+                      className="w-20 text-center"
+                      label="Enabled"
+                      onSort={onSort}
+                      sort={sort}
+                      sortKey="enabled"
+                    />
                     <TableHead className="w-16 text-center">Remove</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {roleMembers.map((member) => (
+                  {sortRows(roleMembers, (member, key) =>
+                    key === "name"
+                      ? memberLabel(member)
+                      : key === "kind"
+                        ? (EVALUATOR_KIND_LABEL[member.evaluatorKind] ?? member.evaluatorKind)
+                        : key === "score"
+                          ? member.latestScore
+                          : (member.enabled ?? true)
+                  ).map((member) => (
                     <TableRow key={member.id}>
                       <TableCell className="max-w-xs">
                         <button

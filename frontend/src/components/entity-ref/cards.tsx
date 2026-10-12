@@ -133,7 +133,46 @@ export function DatasetCard({ id, name }: { id: string; name: string }) {
   );
 }
 
-export function EvalRunCard({ id, name }: { id: string; name: string }) {
+export function EvalRunCard({
+  id,
+  name,
+  evaluationFormat,
+}: {
+  id: string;
+  name: string;
+  evaluationFormat?: "decision";
+}) {
+  return evaluationFormat === "decision" ? (
+    <DecisionEvalRunCard id={id} name={name} />
+  ) : (
+    <ChatEvalRunCard id={id} name={name} />
+  );
+}
+
+function DecisionEvalRunCard({ id, name }: { id: string; name: string }) {
+  const { data, isPending } = useQuery({
+    queryFn: () => apiClient.nativeEvaluations.nativeEvaluationsRetrieve({ id }),
+    queryKey: ["native-evaluation", id],
+    refetchInterval: (query) =>
+      query.state.data?.deletedAt ? false : livePoll(query.state.data?.state),
+  });
+  if (isPending) return <EntityCardSkeleton kind="evalRun" name={name} />;
+  if (!data) return <EntityCardMissing kind="evalRun" name={name} />;
+  return (
+    <EntityCardShell
+      footer={<StatusBadge fallback="pending" status={data.deletedAt ? "deleted" : data.state} />}
+      kind="evalRun"
+      name={data.name || name}
+    >
+      <Row label="Dataset">{data.finalSuite?.datasetName}</Row>
+      <Row label="Calibration">{data.calibrationSuite?.datasetName}</Row>
+      <Row label="Models">{data.config?.participants?.length}</Row>
+      <Row label="Decisions">{data.finalSuite?.rows}</Row>
+    </EntityCardShell>
+  );
+}
+
+function ChatEvalRunCard({ id, name }: { id: string; name: string }) {
   const { data, isPending } = useQuery({
     queryFn: () => apiClient.evalRuns.evalRunsRetrieve({ id }),
     queryKey: ["eval-run", id],

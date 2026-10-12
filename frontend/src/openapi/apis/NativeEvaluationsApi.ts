@@ -20,6 +20,7 @@ import type {
   EvaluationResumeRequest,
   EvaluationReuseRequest,
   NativeEvaluation,
+  NativeMonitor,
   PaginatedNativeEvaluationList,
 } from '../models/index';
 import {
@@ -33,6 +34,8 @@ import {
     EvaluationReuseRequestToJSON,
     NativeEvaluationFromJSON,
     NativeEvaluationToJSON,
+    NativeMonitorFromJSON,
+    NativeMonitorToJSON,
     PaginatedNativeEvaluationListFromJSON,
     PaginatedNativeEvaluationListToJSON,
 } from '../models/index';
@@ -43,6 +46,10 @@ export interface NativeEvaluationsCatalogListRequest {
 
 export interface NativeEvaluationsCreateRequest {
     decisionComparisonRequestRequest: DecisionComparisonRequestRequest;
+}
+
+export interface NativeEvaluationsDestroyRequest {
+    id: string;
 }
 
 export interface NativeEvaluationsLaunchCreateRequest {
@@ -56,6 +63,17 @@ export interface NativeEvaluationsListRequest {
     project?: string;
     search?: string;
     state?: string;
+}
+
+export interface NativeEvaluationsMonitorRetrieveRequest {
+    id: string;
+    key?: string;
+    limit?: number;
+    offset?: number;
+    outcome?: NativeEvaluationsMonitorRetrieveOutcomeEnum;
+    participant?: string;
+    role?: NativeEvaluationsMonitorRetrieveRoleEnum;
+    search?: string;
 }
 
 export interface NativeEvaluationsPauseCreateRequest {
@@ -207,6 +225,60 @@ export class NativeEvaluationsApi extends runtime.BaseAPI {
 
     /**
      */
+    async nativeEvaluationsDestroyRaw(requestParameters: NativeEvaluationsDestroyRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<void>> {
+        if (requestParameters['id'] == null) {
+            throw new runtime.RequiredError(
+                'id',
+                'Required parameter "id" was null or undefined when calling nativeEvaluationsDestroy().'
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("ClerkBearerAuth", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+        if (this.configuration && this.configuration.apiKey) {
+            headerParameters["X-Api-Key"] = await this.configuration.apiKey("X-Api-Key"); // ApiKeyAuth authentication
+        }
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("BearerAuth", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/api/native-evaluations/{id}/`;
+        urlPath = urlPath.replace(`{${"id"}}`, encodeURIComponent(String(requestParameters['id'])));
+
+        const response = await this.request({
+            path: urlPath,
+            method: 'DELETE',
+            headers: headerParameters,
+            query: queryParameters,
+        }, initOverrides);
+
+        return new runtime.VoidApiResponse(response);
+    }
+
+    /**
+     */
+    async nativeEvaluationsDestroy(requestParameters: NativeEvaluationsDestroyRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<void> {
+        await this.nativeEvaluationsDestroyRaw(requestParameters, initOverrides);
+    }
+
+    /**
+     */
     async nativeEvaluationsLaunchCreateRaw(requestParameters: NativeEvaluationsLaunchCreateRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<NativeEvaluation>> {
         if (requestParameters['id'] == null) {
             throw new runtime.RequiredError(
@@ -328,6 +400,89 @@ export class NativeEvaluationsApi extends runtime.BaseAPI {
      */
     async nativeEvaluationsList(requestParameters: NativeEvaluationsListRequest = {}, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<PaginatedNativeEvaluationList> {
         const response = await this.nativeEvaluationsListRaw(requestParameters, initOverrides);
+        return await response.value();
+    }
+
+    /**
+     */
+    async nativeEvaluationsMonitorRetrieveRaw(requestParameters: NativeEvaluationsMonitorRetrieveRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<NativeMonitor>> {
+        if (requestParameters['id'] == null) {
+            throw new runtime.RequiredError(
+                'id',
+                'Required parameter "id" was null or undefined when calling nativeEvaluationsMonitorRetrieve().'
+            );
+        }
+
+        const queryParameters: any = {};
+
+        if (requestParameters['key'] != null) {
+            queryParameters['key'] = requestParameters['key'];
+        }
+
+        if (requestParameters['limit'] != null) {
+            queryParameters['limit'] = requestParameters['limit'];
+        }
+
+        if (requestParameters['offset'] != null) {
+            queryParameters['offset'] = requestParameters['offset'];
+        }
+
+        if (requestParameters['outcome'] != null) {
+            queryParameters['outcome'] = requestParameters['outcome'];
+        }
+
+        if (requestParameters['participant'] != null) {
+            queryParameters['participant'] = requestParameters['participant'];
+        }
+
+        if (requestParameters['role'] != null) {
+            queryParameters['role'] = requestParameters['role'];
+        }
+
+        if (requestParameters['search'] != null) {
+            queryParameters['search'] = requestParameters['search'];
+        }
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("ClerkBearerAuth", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+        if (this.configuration && this.configuration.apiKey) {
+            headerParameters["X-Api-Key"] = await this.configuration.apiKey("X-Api-Key"); // ApiKeyAuth authentication
+        }
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("BearerAuth", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/api/native-evaluations/{id}/monitor/`;
+        urlPath = urlPath.replace(`{${"id"}}`, encodeURIComponent(String(requestParameters['id'])));
+
+        const response = await this.request({
+            path: urlPath,
+            method: 'GET',
+            headers: headerParameters,
+            query: queryParameters,
+        }, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) => NativeMonitorFromJSON(jsonValue));
+    }
+
+    /**
+     */
+    async nativeEvaluationsMonitorRetrieve(requestParameters: NativeEvaluationsMonitorRetrieveRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<NativeMonitor> {
+        const response = await this.nativeEvaluationsMonitorRetrieveRaw(requestParameters, initOverrides);
         return await response.value();
     }
 
@@ -680,6 +835,25 @@ export class NativeEvaluationsApi extends runtime.BaseAPI {
 
 }
 
+/**
+ * @export
+ */
+export const NativeEvaluationsMonitorRetrieveOutcomeEnum = {
+    all: 'all',
+    correct: 'correct',
+    incorrect: 'incorrect',
+    missing: 'missing',
+    unscored: 'unscored'
+} as const;
+export type NativeEvaluationsMonitorRetrieveOutcomeEnum = typeof NativeEvaluationsMonitorRetrieveOutcomeEnum[keyof typeof NativeEvaluationsMonitorRetrieveOutcomeEnum];
+/**
+ * @export
+ */
+export const NativeEvaluationsMonitorRetrieveRoleEnum = {
+    final: 'final',
+    calibration: 'calibration'
+} as const;
+export type NativeEvaluationsMonitorRetrieveRoleEnum = typeof NativeEvaluationsMonitorRetrieveRoleEnum[keyof typeof NativeEvaluationsMonitorRetrieveRoleEnum];
 /**
  * @export
  */

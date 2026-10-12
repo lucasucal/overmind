@@ -26,6 +26,7 @@ from overbae.models import (
     FinetuningJob,
     NativeEvaluationPlan,
     Project,
+    TrainingExperiment,
 )
 from overbae.services.compute_costs import estimate_usage
 from overbae.services.datasets import paths, rows, use
@@ -42,6 +43,43 @@ from overbae.services.training_release import current
 logger = logging.getLogger(__name__)
 
 TEMPERATURES = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
+
+
+def require_available(plan):
+    if plan.deleted_at is not None:
+        raise InputValidationError("This evaluation has been deleted. Create a new evaluation.")
+
+
+@transaction.atomic
+def delete(plan):
+    plan = NativeEvaluationPlan.objects.select_for_update().get(pk=plan.pk)
+    if plan.deleted_at is not None:
+        return
+    if plan.state not in {"draft", "prepared", "paused", "completed", "failed"}:
+        raise InputValidationError(
+            "Pause the evaluation before deleting it. Active or unresolved calls must also be resolved."
+        )
+    if (
+        plan.state != "completed"
+        and TrainingExperiment.objects.filter(evaluation=plan)
+        .exclude(state__in=["completed", "failed"])
+        .exists()
+    ):
+        raise InputValidationError("An unfinished training experiment still needs this evaluation.")
+    if (
+        any(
+            call.get("lease")
+            or call.get("state") in {"submitting", "running", "submission_unknown"}
+            for call in plan.calls.values()
+        )
+        or plan.requests.filter(state__in=["submitting", "running", "submission_unknown"]).exists()
+    ):
+        raise InputValidationError(
+            "This evaluation has active or unresolved provider work. Resolve it before deleting."
+        )
+    # Reused predictions, training experiments and request keys retain their receipts.
+    plan.deleted_at = timezone.now()
+    plan.save(update_fields=["deleted_at", "updated_at"])
 
 
 def runtime():
@@ -112,6 +150,8 @@ def create_plan(
         raise InputValidationError("Invalid native inference settings")
     Project.objects.select_for_update().get(pk=project.pk)
     existing = NativeEvaluationPlan.objects.filter(project=project, request_key=request_key).first()
+    if existing:
+        require_available(existing)
     selected = qualify_participants(project, participants)
     if baseline not in {p["key"] for p in selected}:
         raise InputValidationError("Choose one of the participants as the baseline")
@@ -206,6 +246,7 @@ def launch(plan, *, user=None):
     from overbae.tasks.native_evaluation import advance_plan
 
     plan = NativeEvaluationPlan.objects.select_for_update().get(pk=plan.pk)
+    require_available(plan)
     if plan.state in {"draft", "prepared"}:
         actor = user or plan.triggered_by
         plan.config = {
@@ -310,6 +351,8 @@ def write_suite(plan, role):
                                 "benchmark": benchmark,
                                 "decisions": 1,
                                 "source_row": row.index,
+                                "input": request,
+                                "reference": row.expected_output,
                                 "error": str(exc),
                             }
                         )
@@ -771,6 +814,7 @@ def score(plan):
 @transaction.atomic
 def resume(plan, *, stage=None, call_id=None):
     plan = NativeEvaluationPlan.objects.select_for_update().get(pk=plan.pk)
+    require_available(plan)
     if plan.state == "paused" and stage is None:
         plan.state, plan.error = "running", ""
         plan.save()
@@ -837,6 +881,7 @@ def prepare(plan):
     from overbae.tasks.native_evaluation import advance_plan
 
     plan = NativeEvaluationPlan.objects.select_for_update().get(pk=plan.pk)
+    require_available(plan)
     if plan.state == "draft":
         plan.state = "preparing"
         plan.save()
@@ -881,6 +926,7 @@ def verify_inputs(plan):
 @transaction.atomic
 def reuse_predictions(plan, *, source, participant, source_participant):
     plan = NativeEvaluationPlan.objects.select_for_update().get(pk=plan.pk)
+    require_available(plan)
     if plan.state != "draft" or source.project_id != plan.project_id or source.pk == plan.pk:
         raise InputValidationError(
             "Reuse requires a draft and a different comparison in the same project"
@@ -954,7 +1000,7 @@ def collect_reused(plan, role, participant):
 
 
 def ready_stages(plan):
-    if plan.state in {"draft", "prepared", "paused", "completed"}:
+    if plan.deleted_at is not None or plan.state in {"draft", "prepared", "paused", "completed"}:
         return []
     if plan.calls.get("verify_inputs", {}).get("state") != "completed":
         return (
@@ -999,6 +1045,7 @@ def ready_stages(plan):
 @transaction.atomic
 def pause(plan):
     plan = NativeEvaluationPlan.objects.select_for_update().get(pk=plan.pk)
+    require_available(plan)
     if plan.state not in {"draft", "completed"}:
         plan.state = "paused"
         plan.save()
@@ -1025,6 +1072,9 @@ def settle(plan):
 
 
 def advance(plan_id, *, stage=None):
+    # Monitoring reads this service's frozen suite and calibration helpers.
+    from overbae.services.native_evaluation_monitor import collect_progress, refresh_safely
+
     with transaction.atomic():
         plan = (
             NativeEvaluationPlan.objects.select_for_update(of=("self",))
@@ -1033,6 +1083,8 @@ def advance(plan_id, *, stage=None):
             )
             .get(pk=plan_id)
         )
+        if plan.deleted_at is not None:
+            return
         failed_jobs = {
             str(job.pk): job.status
             for job in FinetuningJob.objects.filter(
@@ -1119,6 +1171,7 @@ def advance(plan_id, *, stage=None):
         else:
             receipt = modal.FunctionCall.from_id(call["id"]).get(timeout=0)
             collect(plan, stage, receipt)
+            call.pop("progress_error", None)
         call.update(
             state="completed"
             if receipt is not None and (not external or reused or receipt["completed"])
@@ -1131,6 +1184,14 @@ def advance(plan_id, *, stage=None):
             if starting and not local and not external and not reused
             else "running"
         )
+        if not starting and not local and not external and not reused:
+            try:
+                collect_progress(plan, stage, call)
+            except Exception:
+                logger.warning("Native progress unavailable: %s %s", plan_id, stage, exc_info=True)
+                call["progress_error"] = (
+                    "Live worker progress is unavailable; retained results remain available."
+                )
     except Exception as exc:
         logger.exception("Native evaluation stage failed: %s %s", plan_id, stage)
         call.update(
@@ -1167,6 +1228,7 @@ def advance(plan_id, *, stage=None):
         else:
             settle(locked)
         locked.save()
+    refresh_safely(locked)
 
 
 def describe(plan):
@@ -1176,6 +1238,7 @@ def describe(plan):
         "project": str(plan.project_id),
         "name": plan.name,
         "state": plan.state,
+        "deleted_at": plan.deleted_at.isoformat() if plan.deleted_at else None,
         "config": plan.config,
         "calls": plan.calls,
         "calibration": plan.calibration,

@@ -31,7 +31,7 @@ from overbae.services.datasets import use as dataset_use
 from overbae.services.datasets.contract import public_intent
 from overbae.services.datasets.lifecycle import DatasetError
 from overbae.services.datasets.rows import RowStoreError
-from overbae.services.deployment import retry_deployment
+from overbae.services.deployment import ensure_training_deployment, retry_deployment
 from overbae.services.eval.eval_set import active_members, snapshot_readiness
 from overbae.services.finetuning_mcp import FineTuneDispatchError, launch_finetune
 from overbae.services.finetuning_prereqs import (
@@ -49,6 +49,8 @@ from overbae.services.mcp.contracts.finetuning import (
     CancelFinetuneOutput,
     CheckFinetuneReadinessInput,
     CheckFinetuneReadinessOutput,
+    DeployFinetuneInput,
+    DeployFinetuneOutput,
     DeploymentReference,
     EstimateFinetuneInput,
     EstimateFinetuneOutput,
@@ -272,6 +274,7 @@ def _deployment_reference(model: DeployedModel) -> DeploymentReference:
         id=str(model.id),
         model_id=model.model_id,
         status=model.status,
+        inference_contract=model.inference_contract,
         inference_url=model.inference_url or None,
         resource=link,
     )
@@ -752,6 +755,31 @@ def _start_sync(payload: StartFinetuneInput, context: MCPContext) -> StartFinetu
     )
 
 
+def _deploy_finetune_sync(
+    payload: DeployFinetuneInput, context: MCPContext
+) -> DeployFinetuneOutput:
+    job = _resolve_finetune(context, payload.finetune)
+    _require_credits(context)
+    try:
+        deployed = ensure_training_deployment(str(job.pk))
+    except InputValidationError as exc:
+        raise MCPError("deployment_not_ready", exc.detail) from exc
+    if deployed is None:
+        raise MCPError(
+            "deployment_not_ready", "No deployable checkpoint or deployment quota is available."
+        )
+    link = resource_link("deployments", str(deployed.pk), deployed.model_id)
+    receipt = resource_link("jobs", f"deployment/{deployed.pk}", deployed.model_id)
+    return DeployFinetuneOutput(
+        summary=f"Deployment {deployed.status}. Application routing is unchanged.",
+        deployment=_deployment_reference(deployed),
+        job=JobReceipt(
+            kind="deployment", id=str(deployed.pk), status=deployed.status, resource=receipt
+        ),
+        resource_links=[link, receipt],
+    )
+
+
 def _retry_deployment_sync(
     payload: RetryDeploymentInput, context: MCPContext
 ) -> RetryDeploymentOutput:
@@ -869,7 +897,12 @@ def _set_benchmark_sync(
 def _inference_sync(payload: RunInferenceInput, context: MCPContext) -> RunInferenceOutput:
     deployment = _resolve_deployment(context, payload.deployment)
     inputs = {
-        "messages": [message.model_dump() for message in payload.messages],
+        "messages": [message.model_dump() for message in payload.messages]
+        if payload.messages
+        else None,
+        "decisions": [decision.model_dump() for decision in payload.decisions]
+        if payload.decisions
+        else None,
         "temperature": payload.temperature,
         "max_tokens": payload.max_tokens,
     }
@@ -889,7 +922,14 @@ def _inference_sync(payload: RunInferenceInput, context: MCPContext) -> RunInfer
     except InputValidationError as exc:
         message = str(exc)
         raise MCPError(
-            "request_conflict" if "Request key" in message else "context_length_exceeded", message
+            "request_conflict"
+            if "Request key" in message
+            else (
+                "context_length_exceeded"
+                if message == inference_requests.CONTEXT_BUDGET_MESSAGE
+                else "invalid_input"
+            ),
+            message,
         ) from None
     link = resource_link("jobs", f"inference_request/{request.pk}", "Inference request")
     return RunInferenceOutput(
@@ -1160,6 +1200,19 @@ def register_finetuning_tools(catalog) -> None:
             {"overmind:train"},
         ),
         (
+            "deploy_finetune",
+            "Deploy trained model",
+            "Ensure a successful fine-tune has an inference deployment, including historical decision checkpoints. Reuses existing deployments; failed/deleted deployments require retry_deployment. Does not activate application routing.",
+            DeployFinetuneInput,
+            DeployFinetuneOutput,
+            _deploy_finetune_sync,
+            False,
+            True,
+            "gpu",
+            "job",
+            {"overmind:deploy"},
+        ),
+        (
             "retry_deployment",
             "Retry deployment",
             "Retry a failed or deleted fine-tuned deployment.",
@@ -1201,7 +1254,7 @@ def register_finetuning_tools(catalog) -> None:
         (
             "run_inference",
             "Run inference",
-            "Submit inference with a stable request_key; identical retries reuse its durable job. Read get_job(kind=inference_request) for the result. Omitted max_tokens uses the production default.",
+            "Submit inference with a stable request_key; identical retries reuse its durable job. Supply messages for chat deployments or input-only decisions for decision deployments. Read get_job(kind=inference_request) for text or probabilities. Omitted chat max_tokens uses the production default.",
             RunInferenceInput,
             RunInferenceOutput,
             _inference_sync,
@@ -1252,6 +1305,7 @@ def register_finetuning_tools(catalog) -> None:
                 in {
                     "start_finetune",
                     "retry_deployment",
+                    "deploy_finetune",
                     "set_active_model",
                     "run_inference",
                     "cancel_finetune",

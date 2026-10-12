@@ -222,7 +222,7 @@ export interface FinetuningJobsRunsListRequest {
     createdBefore?: Date;
     dataset?: string;
     groupId?: string;
-    ordering?: string;
+    ordering?: FinetuningJobsRunsListOrderingEnum;
     page?: number;
     pageSize?: number;
     project?: string;
@@ -1583,8 +1583,8 @@ export class FinetuningJobsApi extends runtime.BaseAPI {
     }
 
     /**
-     * The training history lists *runs*, not jobs: the wizard launches one job per experiment and stamps them with a shared `group_id`. Paging jobs would straddle a run across a page boundary and silently corrupt every per-run aggregate the client derives (status, progress, cost, duration, and the single-job test that picks the row\'s navigation target), so this pages over distinct runs and returns each one whole.  `count` is the number of matching **runs**. `results` carries one entry per run — `{run_id, group_id, jobs}` — where `run_id` is the `group_id` when there is one and the lone job\'s id otherwise, and `jobs` is every job of that run so client-side aggregation is always complete. Runs are ordered by their most recent job; `?ordering=` is accepted for compatibility but does not reorder runs.  Every filter of the jobs list applies (`project`, `capability`, `dataset`, `base_model`, `status`, `provider`, `group_id`, `search`).
-     * List training runs — whole runs per page, newest first
+     * The training history lists *runs*, not jobs: the wizard launches one job per experiment and stamps them with a shared `group_id`. Paging jobs would straddle a run across a page boundary and silently corrupt every per-run aggregate the client derives (status, progress, cost, duration, and the single-job test that picks the row\'s navigation target), so this pages over distinct runs and returns each one whole.  `count` is the number of matching **runs**. `results` carries one entry per run — `{run_id, group_id, jobs}` — where `run_id` is the `group_id` when there is one and the lone job\'s id otherwise, and `jobs` is every job of that run so client-side aggregation is always complete. Ordering applies to whole-run values before pagination. By default, the most recently created job places its run first.  Every filter of the jobs list applies (`project`, `capability`, `dataset`, `base_model`, `status`, `provider`, `group_id`, `search`).
+     * List training runs — whole runs per page
      */
     async finetuningJobsRunsListRaw(requestParameters: FinetuningJobsRunsListRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<PaginatedFinetuningJobRunList>> {
         const queryParameters: any = {};
@@ -1677,8 +1677,8 @@ export class FinetuningJobsApi extends runtime.BaseAPI {
     }
 
     /**
-     * The training history lists *runs*, not jobs: the wizard launches one job per experiment and stamps them with a shared `group_id`. Paging jobs would straddle a run across a page boundary and silently corrupt every per-run aggregate the client derives (status, progress, cost, duration, and the single-job test that picks the row\'s navigation target), so this pages over distinct runs and returns each one whole.  `count` is the number of matching **runs**. `results` carries one entry per run — `{run_id, group_id, jobs}` — where `run_id` is the `group_id` when there is one and the lone job\'s id otherwise, and `jobs` is every job of that run so client-side aggregation is always complete. Runs are ordered by their most recent job; `?ordering=` is accepted for compatibility but does not reorder runs.  Every filter of the jobs list applies (`project`, `capability`, `dataset`, `base_model`, `status`, `provider`, `group_id`, `search`).
-     * List training runs — whole runs per page, newest first
+     * The training history lists *runs*, not jobs: the wizard launches one job per experiment and stamps them with a shared `group_id`. Paging jobs would straddle a run across a page boundary and silently corrupt every per-run aggregate the client derives (status, progress, cost, duration, and the single-job test that picks the row\'s navigation target), so this pages over distinct runs and returns each one whole.  `count` is the number of matching **runs**. `results` carries one entry per run — `{run_id, group_id, jobs}` — where `run_id` is the `group_id` when there is one and the lone job\'s id otherwise, and `jobs` is every job of that run so client-side aggregation is always complete. Ordering applies to whole-run values before pagination. By default, the most recently created job places its run first.  Every filter of the jobs list applies (`project`, `capability`, `dataset`, `base_model`, `status`, `provider`, `group_id`, `search`).
+     * List training runs — whole runs per page
      */
     async finetuningJobsRunsList(requestParameters: FinetuningJobsRunsListRequest = {}, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<PaginatedFinetuningJobRunList> {
         const response = await this.finetuningJobsRunsListRaw(requestParameters, initOverrides);
@@ -1816,6 +1816,26 @@ export const FinetuningJobsMonitoringRetrieveProbeEnum = {
     generation: 'generation'
 } as const;
 export type FinetuningJobsMonitoringRetrieveProbeEnum = typeof FinetuningJobsMonitoringRetrieveProbeEnum[keyof typeof FinetuningJobsMonitoringRetrieveProbeEnum];
+/**
+ * @export
+ */
+export const FinetuningJobsRunsListOrderingEnum = {
+    status: 'status',
+    status2: '-status',
+    name: 'name',
+    name2: '-name',
+    models: 'models',
+    models2: '-models',
+    dataset: 'dataset',
+    dataset2: '-dataset',
+    duration: 'duration',
+    duration2: '-duration',
+    credits: 'credits',
+    credits2: '-credits',
+    created_at: 'created_at',
+    created_at2: '-created_at'
+} as const;
+export type FinetuningJobsRunsListOrderingEnum = typeof FinetuningJobsRunsListOrderingEnum[keyof typeof FinetuningJobsRunsListOrderingEnum];
 /**
  * @export
  */

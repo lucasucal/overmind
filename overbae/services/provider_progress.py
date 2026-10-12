@@ -101,7 +101,12 @@ def collect(run, *, environment, call_id="", deployed=None):
     streams = (
         [("call", "call:" + call_id), ("request", "worker-call:" + call_id)] if call_id else []
     )
-    if deployed and deployed.weights_path and deployed.gpu_type:
+    if (
+        deployed
+        and deployed.inference_contract == "chat"
+        and deployed.weights_path
+        and deployed.gpu_type
+    ):
         lora = bool(deployed.adapter_path)
         cls_name = worker_cls_name(
             deployed.gpu_type,

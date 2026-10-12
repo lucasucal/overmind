@@ -110,24 +110,31 @@ const args = {
   projectId: "project",
 };
 
-it("uses the same monitoring policy for forecasting and launch", async () => {
+it.each([
+  "baseten",
+  "modal",
+  "together",
+])("uses the same default %s monitoring policy for forecasting and launch", async (backend) => {
+  mocks.catalog.backend = backend;
   const { result } = renderHook(() => useTrainWizard({ ...args, initialEvalDatasetId: undefined }));
   await waitFor(() => expect(result.current.canLaunch).toBe(true));
-  act(() =>
-    result.current.setMonitoring({
-      ...result.current.monitoring,
-      interval_steps: 5,
-      loss_sample: 512,
-      mode: "steps",
-    })
-  );
   const latest = mocks.queries.mock.calls.at(-1)![0];
   await latest.queries[0].queryFn();
   await act(() => result.current.launch());
   expect(
     mocks.estimate.mock.calls.at(-1)![0].finetuningEstimateRequestRequest.hyperparameters.monitoring
   ).toEqual(mocks.create.mock.calls.at(-1)![0][0].hyperparameters.monitoring);
-  expect(mocks.create.mock.calls.at(-1)![0][0].hyperparameters.monitoring.loss_sample).toBe(512);
+  expect(mocks.create.mock.calls.at(-1)![0][0].hyperparameters.monitoring).toEqual({
+    early_stopping: null,
+    interval_steps: null,
+    loss_sample: 2048,
+    max_checks: 12,
+    mode: backend === "together" ? "off" : "adaptive",
+    overhead_fraction: 0.1,
+    selection: "last",
+    target_seconds: 300,
+    train_sample: 256,
+  });
 });
 
 it("starts without optional evaluations and launches with the standard validation split", async () => {

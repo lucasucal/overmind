@@ -10,8 +10,9 @@ from test_data_first_workflow import workspace
 from test_mcp_research_journey import call
 
 from modal_shared.operational_events import Journal
-from overbae.models import APIToken, FinetuningJob, Project, ProjectMembership, User
+from overbae.models import APIToken, DeployedModel, FinetuningJob, Project, ProjectMembership, User
 from overbae.services import operational_progress, provider_progress
+from overbae.services.deployment import advance_deployment
 from overbae.services.finetuning_runner import PollSnapshot
 from overbae.services.mcp.server import create_mcp_application
 from overbae.services.provider_progress import read_page as read_provider_page
@@ -25,7 +26,7 @@ emit_provider_event = Journal.emit
 @pytest.mark.parametrize("terminal", ["succeeded", "failed", "cancelled"])
 @pytest.mark.parametrize("lost_transition", [False, True])
 def test_training_terminal_timeline_matches_mcp_without_another_provider_call(
-    terminal, lost_transition
+    terminal, lost_transition, fake_modal
 ):
     project, _, dataset = workspace()
     user = project.memberships.select_related("user").first().user
@@ -59,6 +60,7 @@ def test_training_terminal_timeline_matches_mcp_without_another_provider_call(
     with (
         patch("overbae.services.finetuning_runner.get_runner", return_value=runner),
         patch("overbae.tasks.finetuning._charge_modal_finetuning"),
+        patch("overbae.tasks.model_deployment.register_finetuned_model.delay") as deploy,
         patch("overbae.celery.get_celery_app") as app,
     ):
         inventory = app.return_value.control.inspect.return_value
@@ -70,6 +72,29 @@ def test_training_terminal_timeline_matches_mcp_without_another_provider_call(
             )
         else:
             observe_finetuning_job(job)
+            if terminal == "succeeded":
+                job.refresh_from_db()
+                assert job.status == "deploying"
+                deploy.assert_called_once_with(job_id=str(job.pk))
+                deployed = DeployedModel.objects.create(
+                    project=project,
+                    finetuning_job=job,
+                    model_id="native-timeline",
+                    inference_contract="decision",
+                    serving_runtime={"environment": "test"},
+                    checkpoint_hash="checkpoint",
+                    status="warming",
+                    deployment_stage="warm",
+                    deployment_call_id="fc-warm",
+                )
+                fake_modal.adopt(
+                    "fc-warm",
+                    state="done",
+                    result={"verified": True, "artifact_identity": "checkpoint"},
+                )
+                advance_deployment(deployed.pk)
+                DeployedModel.objects.filter(pk=deployed.pk).update(deployment_next_poll_at=None)
+                advance_deployment(deployed.pk)
         calls = runner.poll.call_count
         reconcile_finetuning_jobs()
         reconcile_finetuning_jobs()

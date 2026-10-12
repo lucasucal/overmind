@@ -71,3 +71,11 @@ current project's Console base and preserve `projectId`.
 For saved partitions, standalone decision comparisons, explicit training candidates or reproducible performance workloads, use `develop-model-from-data` and [the model workflow reference](../overmind/references/model-workflows.md). The Workshop interprets targets from evidence before consumers enforce their declared meaning. These workflows do not require a repository or activate a model.
 
 Read `overmind://interface/current` for connected lifecycle version and [model workflows](../overmind/references/model-workflows.md) for explicit source derivation, draft/prepare/launch, bounded profiles, prediction reuse and recovery. Creation is not paid launch; saved scope and receipts control continuation.
+
+Use `inspect_native_evaluation` for recorded per-model execution stages, partial
+metrics and paginated decision inputs, references and probability outputs. Keep
+`role=calibration` separate from `role=final`; calibration scores are in-sample.
+Select an exact sample `key` (including `"0"`) or page with `offset`/`limit`.
+Partial scores describe only the returned scored subset, not a final ranking.
+Reads may index retained local evidence but never start inference. Unavailable
+worker telemetry, incompatible inputs and missing outputs remain explicit.

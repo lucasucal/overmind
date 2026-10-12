@@ -204,7 +204,7 @@ In short:
 - Warm neutral throughout: near-black canvas, near-white ink, muted warm borders.
 - Flat surfaces, with a subtle drop shadow reserved for confirmation dialogs.
 - Pixel geometry: a 1px / 2px / 3px radius ramp, including the Workshop bezel and composers.
-- Mondwest for titles, Geist Pixel for everything else, NeueBit for navigation.
+- Mondwest for main page titles, Geist Pixel for other content, NeueBit for navigation.
 - Sentence case everywhere; uppercase and wide tracking are banned.
 - The copper eye carries the brand, so nothing else has to.
 - Dark is the only theme, from first paint through every product surface.
@@ -320,7 +320,7 @@ Body and prose font: Geist Pixel Square (fallback `system-ui, -apple-system, san
 Navigation accent: NeueBit (fallback `system-ui, sans-serif`).
 
 Three self-hosted faces with three non-overlapping jobs. Mondwest appears only
-on titles and gives page headers a presence a SaaS console does not usually
+on the main page title and gives page headers a presence a SaaS console does not usually
 have. Geist Pixel is the platform default: set on `body`, so a label, table
 cell, chip, button, metric or paragraph needs no class at all. NeueBit is the
 navigation accent, scoped to two surfaces, the sidebar nav rows and the
@@ -346,16 +346,16 @@ it; prose resets to `normal`.
 
 ### Hierarchy
 
-Titles pick exactly one of four steps. Size and face are the only hierarchy
-levers; every step shares the same weight.
+Headings pick one of four steps. Only the main page header uses Mondwest;
+card, dialog, sheet, section and empty-state headings use Geist Pixel.
 
-- **Display / `title-hero`** (700, 36px, 40px line): Hero and empty-state
+- **Display / `title-hero`** (Geist Pixel, 400, 36px, 40px line): Hero and empty-state
   headlines. At most one per screen.
-- **Headline / `page-title`** (700, ~29px, 32.4px line): The single page header.
+- **Headline / `page-title`** (Mondwest, 700, ~29px, 32.4px line): The single page header.
   Use the `PageHeader` component; never hand-roll it.
-- **Title / `title-section`** (700, 20px, 28px line): A section heading within a
+- **Title / `title-section`** (Geist Pixel, 400, 20px, 28px line): A section heading within a
   page.
-- **Title-card / `title-card`** (700, 18px, 24px line): Card, dialog, sheet and
+- **Title-card / `title-card`** (Geist Pixel, 400, 18px, 24px line): Card, dialog, sheet and
   alert titles.
 - **Body** (400, 14px): The dominant UI size. The tokenized ramp is Tailwind's
   unmodified default: xs 12, sm 14, base 16, lg 18, xl 20, 2xl 24, 4xl 36.
@@ -371,8 +371,8 @@ levers; every step shares the same weight.
 
 ### Named rules
 
-**The Three Faces rule.** Mondwest for titles, NeueBit for navigation, Geist
-Pixel for everything else. "Everything else" is the default and needs no class. A
+**The Three Faces rule.** Mondwest only for main page titles, NeueBit for navigation,
+Geist Pixel for all other content, including popup, card and section titles. "Everything else" is the default and needs no class. A
 call site never names a font family; it imports a role from `lib/typography.ts`
 (`TITLE.page`, `PROSE`, `LABEL.chip`) so the set of surfaces using each face
 stays greppable. Inline `fontFamily` is banned outright, with no allowlist.
@@ -382,10 +382,9 @@ stays greppable. Inline `fontFamily` is banned outright, with no allowlist.
 `app-sidebar.tsx`, `routes/_auth.tsx` and the two registries. A face keeps its
 meaning by being the only thing that has that job.
 
-**The Size Is Hierarchy rule.** All four title steps share one weight, because
-Mondwest ships a Regular master only and a weight utility renders synthesized
-bold. Pairing a `text-*` size with a title class is banned too; that is how four
-steps collapse back into a dozen ad-hoc sizes.
+**The Size Is Hierarchy rule.** Each heading role owns its size and weight.
+Use the role without per-call-site overrides. Mondwest stays exclusive to
+`TITLE.page`; all other heading roles use the regular Geist Pixel master.
 
 **The Sentence Case rule.** Every label, chip, badge, tab and column header is
 sentence case with acronyms preserved, via `sentenceCase` / `humanizeKey` in
@@ -440,6 +439,12 @@ inside each section, not outside the divider. Within an already padded body,
 cancel that inset with matching negative margins and restore it on the section's
 content. Nested bordered surfaces use their own edges; chart axes and separators
 within prose remain local to that content.
+
+Data-column headers sort on click and expose their direction with the shared
+chevron and `aria-sort`. Header buttons support keyboard activation. Sort raw
+numbers and timestamps, never their formatted labels; keep missing measurements
+last. Paginated lists sort the full matching set before paging. Preserve section
+headers, summary rows and conversation membership. Action-only columns do not sort.
 
 | Slot                                     | Padding                                                |
 | ---------------------------------------- | ------------------------------------------------------ |
@@ -581,7 +586,7 @@ the token can't reach it.
 - **Shadow:** None. See Elevation and depth.
 - **Padding:** `p-7` header, `px-7 pb-7 pt-0` content. Internal separation uses
   `divide-y divide-border/40` rather than padded blocks.
-- **Title:** Always `TITLE.card` (18px Mondwest).
+- **Title:** Always `TITLE.card` (18px Geist Pixel).
 
 ### Badges / chips
 
@@ -673,9 +678,8 @@ Condition labels use card fill, a 1px neutral outline and 2px corners.
 Cells open at full scale; zoom and Fit view are explicit camera controls, not
 changes to cell dimensions. Reset and linked-cell focus return to scale 1, while resize
 preserves the chosen zoom. The Agent trajectory's minimap treatment is available
-through the left-hand controls, hidden initially and remembered in this browser.
-A Process control beside the dataset name shows current execution facts. The canvas
-shows the selected successful process and its recorded partition outputs. Corrections
+through the right-hand controls, hidden initially and remembered in this browser.
+The canvas shows the selected successful process and its recorded partition outputs. Corrections
 replace that process; there is no repair-history or restore view.
 Live cell arrivals receive a bounded opacity reveal after graph placement; changed
 content or state briefly washes the existing frame with a neutral surface token.
@@ -683,11 +687,13 @@ Cells never move independently of their connectors. Initial load, unchanged
 refreshes, usage metadata and exact-cell inspection remain quiet. Reduced motion uses
 a shorter, gentler acknowledgement; background/offscreen updates do not replay.
 There is no platform chat or bottom chat composer. Dataset metadata changes use
-shared lifecycle endpoints. The rail on the left groups its controls in a compact,
+shared lifecycle endpoints. The rail on the right groups its controls in a compact,
 opaque card-colored box with a 1px neutral border and small corners. It holds
 a folder button that expands or collapses the existing workspace column and,
 when cells exist, the minimap toggle. There is no cell-search button or cell
 selector strip. The folder changes to its open state while expanded.
+Zoom, Fit view and Reset sit at the bottom right, with the minimap beside them
+when visible. Canvas and landing content reserve space along the right edge.
 The sidebar closes on workspace selection or leaving the route; toggling it
 preserves the notebook. It uses the existing grid animation,
 with no separate pane, dialog or scrim.
@@ -702,7 +708,9 @@ collapsible strips with the same chevron header, read-only **Script** when prese
 (`rows × columns` in its meta), the table's search and filter row, and its
 pagination. The frame reserves 12px above its content for the overlapping title
 chip, including cells with only Data and no Source or Script section. Data has
-a top divider only when another section precedes it.
+a top divider only when another section precedes it. Expanded scripts and retained
+package source scroll within a 320px maximum height; the file controls stay above
+the code viewport. Short scripts use their natural height.
 Cells have no Execution details section; durable run facts remain
 available through the version selector and MCP. The table shows new rows on `success/10` and changed values as a
 word-level diff in place: removed on `destructive/15` struck through, added on
@@ -714,6 +722,8 @@ The rows search field and Filter button form one connected control with matching
 24px heights, outer corners and a single shared border. Their shared baseline does
 not depend on inline-input line boxes; the existing filter glyph and behavior stay
 unchanged. Active filter and sort chips remain outside this group.
+The filter popover uses the same 24px controls, with muted labels, full-width
+row dividers, outlined fields and a neutral Add filter button.
 
 Source cells show a compact row of outlined source chips, not a collapsible text
 section. File chips show the filename, row count and original-file download;
@@ -745,6 +755,23 @@ Overlap is advisory in setup.
 Unreadable data, invalid technical formats and incompatible model settings still
 block execution. There is no extra quality-approval step.
 
+Training setup lists **Training mode** (Decision or Generative) separately from
+**Task type**. The task uses its recorded classification and provenance; missing
+classification reads **Not classified** without a fabricated source label.
+Model cards show match scores, costs and duration estimates only when measured.
+They omit ungraded badges, benchmark-ranking notes and forecast-status prose.
+Setup omits development-monitoring controls and explanatory text; estimates and
+launch use the same backend-appropriate default monitoring policy.
+
+Decision training runs show **Prediction labels** alongside Dataset in the existing
+run metadata, using neutral chips without a separate section, icon or label count.
+Single-question labels retain their question as accessible/hover context; multiple
+questions keep their own captions. Option order and declared score axes are preserved.
+Labels come from the exact pinned training cell, including
+options with zero target probability; shared cells appear once across model variants.
+Long labels wrap, larger collections scroll, and bounded summaries show their label-set
+coverage. Unavailable labels remain explicitly unavailable, never inferred from predictions.
+
 Training validation appears as a **Validation loss** graph in the same metrics grid
 and card as loss, learning rate and gradient norm. It plots recorded fixed-sample
 checks by training step. Monitoring tables, timings, examples, checkpoints and
@@ -764,6 +791,94 @@ percentage-point change for accuracy; latest, peak and initial for learning rate
 latest, peak and average for gradient norm. Terminal runs say **Last recorded**.
 Comparisons show separate model summaries, never pooled statistics. A single
 measurement has no measured change.
+
+Evaluations use one **Runs** list for generated responses and probability comparisons.
+Search, filters and pagination span both formats; **New evaluation** selects the
+scoring format. Selection and single/bulk deletion cover both formats. Selection
+retains each row's format across pages; partial deletion clears successful rows
+and keeps failures selected. Decision deletion removes the list entry while
+retaining request identities and evidence referenced by training or prediction
+reuse. Active or unresolved work and unfinished experiment dependencies block
+deletion with an actionable error. Both formats include a run-details card with full-width dividers.
+Probability runs show participants, the baseline, exact dataset versions and row
+counts, optional calibration data, timestamps and status. Completion time comes
+from the recorded scoring observation; missing credit usage remains unmeasured.
+Evaluation details have no Optimise action. Probability metrics appear above the shared-style
+comparison table, with models as rows and measured metrics as columns. The baseline
+appears once. Model comparison uses the same DataTable, compact model/baseline
+badges and resizable columns as other Console lists, with benchmark group rows
+preserved while sorting. Scores are plain tabular values, without link-like
+underlines or permanent direction arrows. Coverage remains a column with a warning
+indicator for missing, invalid or incompatible predictions; hover/focus exposes
+the exact counts. Score hover/focus exposes denominators,
+confidence intervals, paired differences and recorded adjusted scores. Confidence is a
+separate metric card: observed correctness and claimed probability share a 0–100%
+bar with a hatched gap and a confidence marker. Soft targets use “Reference support”,
+never invented correctness. Original and adjusted measurements appear together when
+available, without a Raw/Calibrated toggle. Use final-evaluation reliability evidence,
+weight bands by decision count, and omit unmeasured confidence. The table retains
+calibration error across confidence bands; equal overall averages do not imply calibration.
+Accuracy, cross entropy and Brier lead; score/ranking errors appear when measured.
+Mode agreement and top-choice reference mass are omitted when their denominators
+match hard-label accuracy, and retained for soft or mixed targets. The Console
+omits report downloads, receipt/diagnostic JSON sections and workload measurement
+controls; the retained records and services remain available through REST and MCP.
+Their cards use full-width plots, compact labelled bars, a faint numeric grid and
+the shared hover tooltip with a vertical guide. Accuracy uses a percentage scale;
+cross entropy, Brier and error metrics keep their native numeric units. Missing
+measurements are omitted, never converted to zero or sample distributions.
+
+Running probability benchmarks show per-model stage, scored/expected coverage
+and updating provisional metrics. Each metric averages measured benchmark means,
+not unlike score units; multiple benchmarks expand below the model row. Calibration
+and held-out final results have separate tabs. Datapoint rows open the existing
+full-size, two-pane inspector: frozen state/question once on the left, all models'
+ordered option probabilities and references listed vertically on the right. Adjusted
+probabilities appear alongside originals when measured. The inspector shares the
+generative view's compact pane headers and read-only model badges, without tabs or
+a model selector. The output list scrolls independently on desktop; narrow screens
+stack it after the shared input. Probability values use compact shared
+table rows with full-width rules, followed by aligned evaluation-score rows.
+Mean-only ordinal targets
+retain their explicit axis and reference mean. Missing outputs never borrow another
+model's answer; each model retains its own pending and error states. This remains
+an inspection page, without execution actions.
+
+Probability datapoints use the shared DataTable: compact single-line input
+previews, a reference column and prediction/probability pairs, read-only model badges, bounded
+resizable columns, standard pagination and roving keyboard row navigation.
+Predicted options use success/check or error/cross chips only when a retained
+accuracy score establishes correctness against a single-answer target. Soft and
+ordinal targets stay neutral. References show the actual answer, a soft-target
+chip with the full distribution on hover, or an explicit mean. Probability stays
+a neutral numeric value with a compact magnitude bar, never a success threshold;
+a high-probability wrong answer remains visibly wrong. A compact key identifies
+outcome colors and the probability bars. Icons and accessible labels retain the
+meaning without color. Missing and unscored outputs have separate neutral/warning
+chips, and tied maxima remain explicit in accessible labels and tooltips.
+State previews distinguish examples without repeating the question in every row;
+the full question and state remain in the preview title and inspector. Open rows
+use the shared active-row tint. Wide model comparisons scroll within the table.
+The datapoint toolbar uses shared search and model/outcome selectors. Search
+matches frozen input text, source row keys and benchmark names across the entire
+suite before pagination. Outcomes match raw recorded scores for the selected
+model, or any model when all are shown; soft/ordinal targets never become hard
+correctness labels. Model selection also narrows visible prediction columns.
+Filter changes reset pagination, zero matches retain the clear-filters control,
+and aggregate benchmark metrics remain unfiltered. Exact-row inspection remains
+independent of the table filters.
+
+Evaluation score cards use the same full-width header divider and plot frame.
+Score, box and violin views use compact 48px rows with evaluator/model names above
+their marks; score means stay visible at the right. The plot starts at the card's
+inner edge, with no legend or axis gutter. Only score endpoints are labelled;
+the dashed grid retains its measured 0–100% scale. Histogram and density views
+keep their legend above the plot; histogram counts retain a labelled upper bound.
+Hover uses the shared split-row tooltip: means for scores, per-series bucket counts
+for histograms, relative density for distributions, and quartiles/range/mean for
+box and violin views. The same values are accessible with arrow keys; Escape
+dismisses the tooltip. Pointer clicks do not add a chart focus outline.
+A vertical dashed guide follows the hovered score position and keyboard selection.
 
 Graph tooltips use the shared `GraphTooltip`: the step, epoch, iteration or timestamp
 is above the values. Each series is a full-width split row with its line colour and

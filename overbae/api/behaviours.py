@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import UTC, datetime
+from itertools import batched
 
-from django.db.models import Avg, Case, CharField, Count, F, Max, Q, Value, When
+from django.db.models import Avg, Case, CharField, Count, F, Max, Min, Q, Value, When
 from django.db.models.functions import Cast, Concat
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
@@ -12,7 +14,7 @@ from drf_spectacular.utils import (
     extend_schema_field,
     extend_schema_view,
 )
-from rest_framework import mixins, serializers, viewsets
+from rest_framework import filters, mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -442,7 +444,12 @@ class TaskExecutionViewSet(viewsets.ReadOnlyModelViewSet):
         "terminal_kind",
         "capability__name",
     ]
+    usage_ordering_fields = {"total_tokens", "total_cost", "model"}
     ordering_fields = [
+        "total_tokens",
+        "total_cost",
+        "model",
+        "capability__name",
         "behaviour__key",
         "binding_source",
         "conversation_id",
@@ -453,6 +460,74 @@ class TaskExecutionViewSet(viewsets.ReadOnlyModelViewSet):
         "terminal_kind",
         "trace_id",
     ]
+
+    def filter_queryset(self, queryset):
+        field = self.request.query_params.get("ordering", "").lstrip("-")
+        for backend in self.filter_backends:
+            if field in self.usage_ordering_fields and issubclass(backend, filters.OrderingFilter):
+                continue
+            queryset = backend().filter_queryset(self.request, queryset, self)
+        return queryset
+
+    def usage_ordered_page(self, queryset, ordering):
+        entries = list(
+            queryset.order_by("id").values(
+                "id",
+                "project_id",
+                "trace_id",
+                "conversation_id",
+                "capability_id",
+                "started_at",
+            )
+        )
+        traces = defaultdict(set)
+        capabilities = defaultdict(set)
+        for row in entries:
+            traces[row["project_id"]].add(row["trace_id"])
+            capabilities[(row["project_id"], row["trace_id"])].add(row["capability_id"])
+        usage = {}
+        # Reuse the displayed, de-duplicated usage contract in bounded trace batches.
+        for project, identities in traces.items():
+            for batch in batched(sorted(identities), 200, strict=False):
+                usage.update(
+                    {
+                        (project, trace): value
+                        for trace, value in trace_usage_totals([project], list(batch)).items()
+                    }
+                )
+        grouped = self.request.query_params.get("group") == "conversation"
+        groups = defaultdict(list)
+        field = ordering.lstrip("-")
+        descending = ordering.startswith("-")
+        for row in entries:
+            trace = (row["project_id"], row["trace_id"])
+            key = (
+                (row["project_id"], "conversation", row["conversation_id"])
+                if grouped and row["conversation_id"]
+                else (trace if grouped and len(capabilities[trace]) > 1 else row["id"])
+            )
+            groups[key].append(row)
+        measured, missing = [], []
+        for members in groups.values():
+            values = [usage.get((r["project_id"], r["trace_id"]), {}).get(field) for r in members]
+            values = [v for v in values if v is not None]
+            if values:
+                measured.append(((max if descending else min)(values), members))
+            else:
+                missing.append(members)
+        ordered = [
+            members for _, members in sorted(measured, key=lambda pair: pair[0], reverse=descending)
+        ] + missing
+        page = self.paginate_queryset(ordered)
+        selected = page if page is not None else ordered
+        epoch = datetime.min.replace(tzinfo=UTC)
+        ids = [
+            r["id"]
+            for group in selected
+            for r in sorted(group, key=lambda r: r["started_at"] or epoch)
+        ]
+        records = {row.id: row for row in queryset.filter(id__in=ids)}
+        return [records[identity] for identity in ids], page is not None
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -528,11 +603,21 @@ class TaskExecutionViewSet(viewsets.ReadOnlyModelViewSet):
                 output_field=CharField(),
             )
         )
+        ordering = self.request.query_params.get("ordering", "-started_at").split(",")[0]
+        field = ordering.lstrip("-")
+        if field not in self.ordering_fields:
+            field, ordering = "started_at", "-started_at"
+        aggregate = Max if ordering.startswith("-") else Min
         groups = (
             keyed.order_by()
             .values("group_key")
-            .annotate(anchor=Max("started_at"))
-            .order_by(F("anchor").desc(nulls_last=True))
+            .annotate(anchor=aggregate(field))
+            .order_by(
+                F("anchor").desc(nulls_last=True)
+                if ordering.startswith("-")
+                else F("anchor").asc(nulls_last=True),
+                "group_key",
+            )
         )
         page = self.paginate_queryset(groups)
         group_page = page if page is not None else list(groups)
@@ -549,14 +634,17 @@ class TaskExecutionViewSet(viewsets.ReadOnlyModelViewSet):
                 str,
                 description="`conversation` paginates whole conversations: shared "
                 "conversation_id (or handoff trace) rows stay on one page, ordered by "
-                "latest activity with turns chronological inside. `ordering` is ignored.",
+                "the selected column with turns chronological inside.",
             )
         ]
     )
     def list(self, request, *args, **kwargs):
         # Trace-level totals for the page in one query, as the /traces list does.
         queryset = self.filter_queryset(self.get_queryset())
-        if request.query_params.get("group") == "conversation":
+        ordering = request.query_params.get("ordering", "")
+        if ordering.lstrip("-") in self.usage_ordering_fields:
+            rows, paginated = self.usage_ordered_page(queryset, ordering)
+        elif request.query_params.get("group") == "conversation":
             rows, paginated = self._conversation_grouped_page(queryset)
         else:
             page = self.paginate_queryset(queryset)

@@ -213,10 +213,9 @@ def finetune_prerequisite_report(
 
     candidates = analysis.get("candidates") or []
     has_tool_calling = bool((analysis.get("dataset") or {}).get("has_tool_calling"))
+    native = validation.format == "decision"
     recommendations = [slim_recommendation_row(r) for r in candidates[:_MAX_CHAT_CANDIDATES]]
-    catalog = catalog_by_tier(
-        has_tool_calling=has_tool_calling, native=analysis.get("task_type") == "decision"
-    )
+    catalog = catalog_by_tier(has_tool_calling=has_tool_calling, native=native)
 
     hint = None
     if missing:
@@ -241,9 +240,7 @@ def finetune_prerequisite_report(
         "eval_set": eval_set.name if eval_set is not None else None,
         "overlap_count": overlap_count,
         "recommendations": recommendations,
-        "n_candidates": sum(map(len, catalog.values()))
-        if analysis.get("task_type") == "decision"
-        else len(candidates),
+        "n_candidates": sum(map(len, catalog.values())) if native else len(candidates),
         "catalog": catalog,
         "has_tool_calling": has_tool_calling,
         "task_type": analysis.get("task_type"),

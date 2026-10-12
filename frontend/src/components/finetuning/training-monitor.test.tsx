@@ -8,15 +8,16 @@ import {
   createRouter,
   RouterContextProvider,
 } from "@tanstack/react-router";
-import { act, cleanup, render as renderComponent, screen } from "@testing-library/react";
+import { act, cleanup, render as renderComponent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import apiClient from "@/client";
 import type { ExperimentSnapshot } from "@/components/finetuning/job-snapshot";
 import { buildExperimentSnapshot } from "@/components/finetuning/job-snapshot";
 import type { LossCurveData } from "@/hooks/use-finetuning";
 import type { DeployedModelsQueryParams } from "@/hooks/use-inference";
 import { stageDetailLine, stageLabel, stageStatusLine } from "@/lib/finetuning-progress";
-import type { FinetuningJobList } from "@/openapi";
+import type { FinetuningJobList, NativeEvaluation, TrainingExperiment } from "@/openapi";
 
 const CAPABILITY_ID = "00000000-0000-4000-8000-000000000010";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000001";
@@ -44,7 +45,10 @@ const serverPage = ({ capability, pageSize }: DeployedModelsQueryParams) => {
   return { count: scoped.length, results: scoped.slice(0, pageSize ?? 25) };
 };
 
-const mocks = vi.hoisted(() => ({ deployedParams: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  deployedParams: vi.fn(),
+  monitoring: vi.fn().mockResolvedValue({ checks: [], nextOffset: null }),
+}));
 
 vi.mock("@/hooks/use-inference", () => ({
   useDeployedModelsQuery: (params: DeployedModelsQueryParams) => {
@@ -62,7 +66,20 @@ vi.mock("@/hooks/use-finetuning", () => ({
 }));
 
 vi.mock("@/client", () => ({
-  default: { finetuningJobs: { finetuningJobsLossCurvesRetrieve: vi.fn().mockResolvedValue({}) } },
+  default: {
+    finetuningJobs: {
+      finetuningJobsLossCurvesRetrieve: vi.fn().mockResolvedValue({}),
+      finetuningJobsMonitoringRetrieve: mocks.monitoring,
+    },
+    nativeEvaluations: {
+      nativeEvaluationsRetrieve: vi.fn().mockResolvedValue(null),
+    },
+    trainingExperiments: {
+      trainingExperimentsRetrieve: vi
+        .fn()
+        .mockResolvedValue({ evaluation: null, state: "training" }),
+    },
+  },
 }));
 
 vi.mock("@/components/finetuning/judge-eval-table", () => ({
@@ -104,7 +121,9 @@ vi.mock("@/components/finetuning/finetuning-charts", () => ({
   ClassSeriesChart: () => null,
   ConfusionMatrixGrid: () => null,
   MetricSeriesChart: () => null,
-  MultiSeriesChart: () => null,
+  MultiSeriesChart: ({ series }: { series: unknown }) => (
+    <output aria-label="multi-series">{JSON.stringify(series)}</output>
+  ),
 }));
 
 // Radix Tooltip needs its provider.
@@ -144,6 +163,11 @@ const job = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.mocked(apiClient.trainingExperiments.trainingExperimentsRetrieve).mockResolvedValue({
+    evaluation: null,
+    state: "training",
+  } as TrainingExperiment);
+  vi.mocked(apiClient.nativeEvaluations.nativeEvaluationsRetrieve).mockResolvedValue(null!);
 });
 
 it("renders a shared incumbent once across a training group", () => {
@@ -256,6 +280,45 @@ it.each([
   expect(screen.getAllByText("1.2000")).toHaveLength(2);
 });
 
+it("overlays development loss across all experiments", async () => {
+  mocks.monitoring.mockImplementation(({ id }: { id: string }) =>
+    Promise.resolve({
+      checks: [
+        {
+          metrics: { eval_loss: id === "native-0" ? 0.7 : 0.6 },
+          state: "completed",
+          step: 188,
+          stream: "development",
+        },
+      ],
+      nextOffset: null,
+    })
+  );
+  const nativeJobs = ["Pilot", "Full corpus"].map((name, i) => ({
+    ...job,
+    id: `native-${i}`,
+    name,
+    progress: { phase: "training" },
+    status: "running",
+    trainingContract: { objective: "decision_cross_entropy" },
+  })) as unknown as FinetuningJobList[];
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <TrainingMonitorPanel
+        focusJobId={null}
+        groupJobs={nativeJobs}
+        onFocusJob={vi.fn()}
+        projectId={PROJECT_ID}
+      />
+    </QueryClientProvider>
+  );
+  expect(await screen.findByText("Development loss")).toBeTruthy();
+  expect((await screen.findAllByText(/0.7/)).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/0.6/).length).toBeGreaterThan(0);
+});
+
 it("shows the frozen native plan beside its training job", () => {
   const native = {
     ...job,
@@ -263,6 +326,17 @@ it("shows the frozen native plan beside its training job", () => {
       calibration: {},
       calls: {},
       config: {
+        baseline: "base",
+        participants: [
+          { key: "base", kind: "foundation", model: job.baseModel, name: "Unchanged base" },
+          {
+            job: job.id,
+            key: "candidate",
+            kind: "trained",
+            model: job.baseModel,
+            name: "Trained model",
+          },
+        ],
         suites: { calibration: { cell: "cal", rows: 12 }, final: { cell: "final", rows: 48 } },
       },
       error: "",
@@ -282,9 +356,60 @@ it("shows the frozen native plan beside its training job", () => {
       />
     </QueryClientProvider>
   );
-  expect(screen.getByText("Scheduled after checkpoint verification")).toBeTruthy();
+  expect(screen.getAllByText("Waiting for checkpoint")).toHaveLength(2);
   expect(screen.getByText(/48 decisions/)).toBeTruthy();
   expect(screen.queryByText(/No eval dataset or eval set linked/)).toBeNull();
+});
+
+it.each([
+  1, 3,
+])("loads the run-pinned benchmark for an experiment with %s training jobs", async (count) => {
+  const nativeJobs = Array.from({ length: count }, (_, index) => ({
+    ...job,
+    id: `native-job-${index}`,
+    nativeEvaluation: null,
+    trainingContract: { objective: "decision_cross_entropy" },
+  })) as FinetuningJobList[];
+  const evaluation = {
+    calls: {},
+    config: {
+      participants: nativeJobs.map((j, i) => ({
+        job: j.id,
+        key: `candidate-${i}`,
+        kind: "trained",
+        model: j.baseModel,
+        name: j.name,
+      })),
+    },
+    id: "run-pinned-plan",
+    name: "Frozen run benchmark",
+    results: {},
+    state: "draft",
+  } as NativeEvaluation;
+  vi.mocked(apiClient.trainingExperiments.trainingExperimentsRetrieve).mockResolvedValue({
+    evaluation: evaluation.id,
+    state: "training",
+  } as TrainingExperiment);
+  vi.mocked(apiClient.nativeEvaluations.nativeEvaluationsRetrieve).mockResolvedValue(evaluation);
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <TrainingMonitorPanel
+        focusJobId={null}
+        groupJobs={nativeJobs}
+        onFocusJob={vi.fn()}
+        projectId={PROJECT_ID}
+      />
+    </QueryClientProvider>
+  );
+  expect(screen.queryByText("No evaluations pinned to this run")).toBeNull();
+  const table = await screen.findByRole("table", { name: "Evaluation jobs" });
+  expect(within(table).getAllByRole("row")).toHaveLength(count + 1);
+  expect(screen.getAllByRole("link", { name: "Frozen run benchmark" })).toHaveLength(count);
+  expect(apiClient.nativeEvaluations.nativeEvaluationsRetrieve).toHaveBeenCalledWith({
+    id: "run-pinned-plan",
+  });
 });
 
 it.each([

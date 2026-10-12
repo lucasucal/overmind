@@ -13,6 +13,14 @@
  */
 
 import { mapValues } from '../runtime';
+import type { NativeEvaluationSuite } from './NativeEvaluationSuite';
+import {
+    NativeEvaluationSuiteFromJSON,
+    NativeEvaluationSuiteFromJSONTyped,
+    NativeEvaluationSuiteToJSON,
+    NativeEvaluationSuiteToJSONTyped,
+} from './NativeEvaluationSuite';
+
 /**
  *
  * @export
@@ -55,6 +63,18 @@ export interface NativeEvaluation {
      * @memberof NativeEvaluation
      */
     readonly calibrationCell: string | null;
+    /**
+     *
+     * @type {NativeEvaluationSuite}
+     * @memberof NativeEvaluation
+     */
+    readonly finalSuite: NativeEvaluationSuite;
+    /**
+     *
+     * @type {NativeEvaluationSuite}
+     * @memberof NativeEvaluation
+     */
+    readonly calibrationSuite: NativeEvaluationSuite | null;
     /**
      *
      * @type {string}
@@ -102,6 +122,12 @@ export interface NativeEvaluation {
      * @type {Date}
      * @memberof NativeEvaluation
      */
+    readonly deletedAt: Date | null;
+    /**
+     *
+     * @type {Date}
+     * @memberof NativeEvaluation
+     */
     readonly createdAt: Date;
     /**
      *
@@ -121,6 +147,8 @@ export function instanceOfNativeEvaluation(value: object): value is NativeEvalua
     if (!('requestKey' in value) || value['requestKey'] === undefined) return false;
     if (!('finalCell' in value) || value['finalCell'] === undefined) return false;
     if (!('calibrationCell' in value) || value['calibrationCell'] === undefined) return false;
+    if (!('finalSuite' in value) || value['finalSuite'] === undefined) return false;
+    if (!('calibrationSuite' in value) || value['calibrationSuite'] === undefined) return false;
     if (!('job' in value) || value['job'] === undefined) return false;
     if (!('state' in value) || value['state'] === undefined) return false;
     if (!('config' in value) || value['config'] === undefined) return false;
@@ -128,6 +156,7 @@ export function instanceOfNativeEvaluation(value: object): value is NativeEvalua
     if (!('calibration' in value) || value['calibration'] === undefined) return false;
     if (!('results' in value) || value['results'] === undefined) return false;
     if (!('error' in value) || value['error'] === undefined) return false;
+    if (!('deletedAt' in value) || value['deletedAt'] === undefined) return false;
     if (!('createdAt' in value) || value['createdAt'] === undefined) return false;
     if (!('updatedAt' in value) || value['updatedAt'] === undefined) return false;
     return true;
@@ -149,6 +178,8 @@ export function NativeEvaluationFromJSONTyped(json: any, ignoreDiscriminator: bo
         'requestKey': json['request_key'],
         'finalCell': json['final_cell'],
         'calibrationCell': json['calibration_cell'],
+        'finalSuite': NativeEvaluationSuiteFromJSON(json['final_suite']),
+        'calibrationSuite': NativeEvaluationSuiteFromJSON(json['calibration_suite']),
         'job': json['job'],
         'state': json['state'],
         'config': json['config'],
@@ -156,6 +187,7 @@ export function NativeEvaluationFromJSONTyped(json: any, ignoreDiscriminator: bo
         'calibration': json['calibration'],
         'results': json['results'],
         'error': json['error'],
+        'deletedAt': (json['deleted_at'] == null ? null : new Date(json['deleted_at'])),
         'createdAt': (new Date(json['created_at'])),
         'updatedAt': (new Date(json['updated_at'])),
     };
@@ -165,7 +197,7 @@ export function NativeEvaluationToJSON(json: any): NativeEvaluation {
     return NativeEvaluationToJSONTyped(json, false);
 }
 
-export function NativeEvaluationToJSONTyped(value?: Omit<NativeEvaluation, 'id'|'project'|'name'|'request_key'|'final_cell'|'calibration_cell'|'job'|'state'|'config'|'calls'|'calibration'|'results'|'error'|'created_at'|'updated_at'> | null, ignoreDiscriminator: boolean = false): any {
+export function NativeEvaluationToJSONTyped(value?: Omit<NativeEvaluation, 'id'|'project'|'name'|'request_key'|'final_cell'|'calibration_cell'|'final_suite'|'calibration_suite'|'job'|'state'|'config'|'calls'|'calibration'|'results'|'error'|'deleted_at'|'created_at'|'updated_at'> | null, ignoreDiscriminator: boolean = false): any {
     if (value == null) {
         return value;
     }

@@ -1815,3 +1815,55 @@ def test_task_executions_group_by_conversation_paginates_whole_threads():
         f"/api/task-executions/?group=conversation&project={project.id}&page_size=2&page=2"
     ).json()
     assert [row["id"] for row in page2["results"]] == [str(solo.id)]
+
+
+@pytest.mark.parametrize("group", ["", "conversation"])
+@pytest.mark.parametrize("field", ["total_tokens", "total_cost", "model"])
+def test_execution_usage_sorting_uses_displayed_values_before_paging(group, field):
+    user = User.objects.create_user(email=f"sort-{uuid.uuid4()}@example.com")
+    project = make_project()
+    ProjectMembership.objects.create(user=user, project=project)
+    capability = make_capability(project)
+    executions = []
+    for i, tokens in enumerate([20, 3]):
+        trace_id = uuid.uuid4().hex
+        root = _span(project, capability, trace_id=trace_id, qualname="agent.llm")
+        root.attributes.update(
+            {
+                "genai.total_tokens": tokens,
+                "cost": tokens / 10,
+                "genai.model": "Z model" if i == 0 else "A model",
+            }
+        )
+        root.save(update_fields=["attributes"])
+        executions.append(
+            TaskExecution.objects.create(
+                project=project,
+                trace_id=trace_id,
+                unit_span_id=root.span_id,
+                conversation_id=f"c{i}" if group else "",
+            )
+        )
+    extra = (
+        TaskExecution.objects.create(
+            project=project,
+            trace_id=executions[0].trace_id,
+            unit_span_id=uuid.uuid4().hex[:16],
+            conversation_id="c0",
+        )
+        if group
+        else None
+    )
+    client = APIClient()
+    client.force_authenticate(user)
+    for direction, expected in [("", executions[1]), ("-", executions[0])]:
+        response = client.get(
+            "/api/task-executions/",
+            {"project": project.id, "group": group, "ordering": direction + field, "page_size": 1},
+        )
+        assert response.status_code == 200, response.data
+        assert response.data["count"] == 2
+        ids = {row["id"] for row in response.data["results"]}
+        assert str(expected.id) in ids
+        if direction and extra:
+            assert ids == {str(expected.id), str(extra.id)}

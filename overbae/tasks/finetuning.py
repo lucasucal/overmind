@@ -386,33 +386,12 @@ def _finalize_success(job, runner, snap, remote: str) -> dict[str, Any]:
         "checkpoints": progress.get("checkpoints") or [],
     }
     if (job.hyperparameters or {}).get("objective") in DECISION_OBJECTIVES:
-        claimed = FinetuningJob.objects.filter(
-            pk=job.pk,
-            status__in=(
-                FinetuningJob.Status.RUNNING,
-                FinetuningJob.Status.PREPARING,
-                FinetuningJob.Status.QUEUED,
-            ),
-        ).update(
-            status=FinetuningJob.Status.SUCCEEDED,
-            completed_at=timezone.now(),
-            model_weights_location=snap.weights_url,
-            output_model_name=snap.output_model_name,
-            progress=progress,
-            result={
-                **result_blob,
-                "objective": job.hyperparameters["objective"],
-                "inference_contract": "typed_probabilities",
-                **(snap.raw.get("native_artifact") or {}),
-                "checkpoint_selection": snap.raw.get("checkpoint_selection"),
-            },
+        result_blob.update(
+            objective=job.hyperparameters["objective"],
+            inference_contract="typed_probabilities",
+            **(snap.raw.get("native_artifact") or {}),
+            checkpoint_selection=snap.raw.get("checkpoint_selection"),
         )
-        job.refresh_from_db()
-        if claimed:
-            operational_progress.training(job)
-            _record_event(job, "status_change", "Decision checkpoint saved", {"status": job.status})
-            _charge_modal_finetuning(job)
-        return {"status": job.status, "job_id": remote}
     claimed = FinetuningJob.objects.filter(
         pk=job.pk,
         status__in=(

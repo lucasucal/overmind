@@ -23,8 +23,7 @@ examples or resume a platform agent. Chat, mutable-cell and replay endpoints are
 - `services/datasets/versions.py`: version/UUID resolution without importing an agent.
 - The Console landing page is a project dataset table. Rows open the existing
   cells on a grid-snapped flow canvas; the folder button reveals compact,
-  project-scoped navigation. Chat and funding controls are removed. The Process control
-  beside the dataset name exposes current execution facts. Corrections replace the
+  project-scoped navigation. Chat and funding controls are removed. Corrections replace the
   displayed process, with no repair-history or restore view. Exact consumer-pinned
   inputs remain immutable internally.
   Connections follow recorded parents. Moving cells never changes dependencies.
@@ -241,11 +240,10 @@ The Console preserves full-size cell contents on a 20px grid-snapped flow canvas
 Steps cascade down; sibling branches align side by side on the same horizontal
 layer. Cells open at scale 1; explicit zoom, Fit view and a toggleable minimap
 navigate the graph without changing cell dimensions. Reset and linked-cell focus
-restore scale 1; resizing preserves the chosen zoom. The Process control
-beside the dataset name shows current execution facts. `preparation.py` builds the
+restore scale 1; resizing preserves the chosen zoom. `preparation.py` builds the
 selected successful process from verified run inputs, partition members and
 derivations across datasets; unrelated attempts are not canvas nodes.
-The left-hand box contains dataset navigation and the minimap toggle, without
+The right-hand box contains dataset navigation and the minimap toggle, without
 cell search or a cell-selector strip.
 
 MCP contract 5.2 adds the `author-dataset-transformation` prompt and exact-revision

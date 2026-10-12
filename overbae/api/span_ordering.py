@@ -10,12 +10,16 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from django.db import connection
-from django.db.models import F
+from django.db.models import F, Value
 from django.db.models.expressions import RawSQL
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Coalesce, NullIf
 
 from overbae.models import Conversation, Span
 
-SPAN_USAGE_ORDERING_FIELDS = frozenset({"total_tokens", "total_cost", "model", "trace_scores"})
+SPAN_USAGE_ORDERING_FIELDS = frozenset(
+    {"total_tokens", "total_cost", "model", "trace_scores", "source"}
+)
 SESSION_USAGE_ORDERING_FIELDS = frozenset({"total_tokens", "total_cost", "model", "timespan"})
 
 _MODEL_KEYS = (
@@ -194,6 +198,14 @@ def annotate_spans_for_ordering(queryset, ordering: str, *, all_spans: bool):
         return queryset
 
     table = Span._meta.db_table
+
+    if "source" in needed:
+        queryset = queryset.annotate(
+            source=Coalesce(
+                NullIf(KeyTextTransform("connector.source", "resource_attrs"), Value("")),
+                Value("overmind"),
+            )
+        )
 
     if "total_tokens" in needed:
         queryset = queryset.annotate(

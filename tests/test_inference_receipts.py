@@ -115,7 +115,12 @@ def test_unknown_provider_acknowledgement_never_resubmits(monkeypatch):
 def test_expired_observation_can_resolve_without_resubmission(monkeypatch):
     project = Project.objects.create(name="Delayed", slug="delayed")
     model = DeployedModel.objects.create(project=project, model_id="delayed", status="ready")
-    request = inference_requests.submit(model, None, "delayed", {"max_tokens": 32})
+    request = inference_requests.submit(
+        model,
+        None,
+        "delayed",
+        {"max_tokens": 32, "messages": [{"role": "user", "content": "Hello"}]},
+    )
     request.state, request.remote_id = "running", "fc-delayed"
     request.deadline = timezone.now() - timedelta(seconds=1)
     request.save()
@@ -152,7 +157,12 @@ def test_terminal_receipt_recovers_missing_usage_without_repeating_provider_work
     model = DeployedModel.objects.create(
         project=project, model_id="receipt-recovery", status="ready"
     )
-    request = inference_requests.submit(model, None, "receipt-recovery", {"max_tokens": 32})
+    request = inference_requests.submit(
+        model,
+        None,
+        "receipt-recovery",
+        {"max_tokens": 32, "messages": [{"role": "user", "content": "Hello"}]},
+    )
     request.state, request.completed_at = "succeeded", timezone.now()
     request.result = {"content": "ready", "usage": {"completion_tokens": 3}, "latency_ms": 20}
     request.save()

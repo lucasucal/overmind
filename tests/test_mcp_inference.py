@@ -85,6 +85,69 @@ def provider_response(content="Hello", finish_reason="stop"):
     )
 
 
+def test_decision_rest_and_mcp_share_typed_durable_inference(serving, fake_modal):
+    model = serving.model
+    model.inference_contract = "decision"
+    model.serving_runtime = {"app": "decision-test", "environment": "test"}
+    model.checkpoint_hash = "a" * 64
+    model.save()
+    decision = {
+        "state": "passenger",
+        "question": "Survived?",
+        "kind": "choice",
+        "options": ["No", "Yes"],
+    }
+    payload = {"request_key": "native", "decisions": [decision]}
+    api = APIClient()
+    api.force_authenticate(user=serving.user, token=serving.token)
+    response = api.post(f"/api/deployed-models/{model.pk}/inference/", payload, format="json")
+    assert response.status_code == 202, response.data
+    receipt = InferenceRequest.objects.get(pk=response.data["id"])
+    assert receipt.payload["serving_app"] == "decision-test"
+    assert "max_tokens" not in receipt.payload
+    result = rpc(
+        serving,
+        "tools/call",
+        {"name": "run_inference", "arguments": {"deployment": str(model.pk), **payload}},
+    )["result"]
+    assert not result.get("isError"), result
+    assert result["structuredContent"]["job"]["id"] == str(receipt.pk)
+    predictions = [{"options": ["No", "Yes"], "probabilities": [0.2, 0.8]}]
+    fake_modal.deploy(
+        "decision-test",
+        "inference_request",
+        lambda request_id, payload: {
+            "predictions": predictions,
+            "model_identity": "a" * 64,
+            "usage": {"prompt_tokens": 10, "completion_tokens": 0},
+            "finish_reason": "stop",
+            "latency_ms": 12,
+        },
+    )
+    inference_requests.advance(receipt.pk)
+    inference_requests.advance(receipt.pk)
+    response = api.get(f"/api/inference-requests/{receipt.pk}/")
+    assert response.status_code == 200
+    assert response.data["status"] == "succeeded"
+    assert response.data["result"]["predictions"] == predictions
+    assert InferenceCall.objects.filter(pk=receipt.pk).count() == 1
+    bad = api.post(
+        f"/api/deployed-models/{model.pk}/inference/",
+        {**payload, "decisions": [{**decision, "target_probabilities": [0, 1]}]},
+        format="json",
+    )
+    assert bad.status_code == 400
+    assert infer(serving)["isError"]
+    other = Project.objects.create(name="Other decision project", slug="other-decision")
+    DeployedModel.objects.filter(pk=model.pk).update(project=other)
+    InferenceRequest.objects.filter(pk=receipt.pk).update(project=other)
+    assert api.get(f"/api/inference-requests/{receipt.pk}/").status_code == 404
+    assert (
+        api.post(f"/api/deployed-models/{model.pk}/inference/", payload, format="json").status_code
+        == 404
+    )
+
+
 @pytest.mark.parametrize(
     "budget", [{}, {"max_tokens": None}, {"max_tokens": 4096}, {"max_tokens": 12000}]
 )

@@ -82,6 +82,23 @@ class ResumeComparisonInput(MCPModel):
     call_id: str | None = None
 
 
+class InspectComparisonInput(MCPModel):
+    evaluation: UUID
+    role: Literal["calibration", "final"] = "final"
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=10, ge=1, le=50)
+    key: str | None = Field(default=None, max_length=128)
+    search: str = Field(default="", max_length=256)
+    participant: str | None = Field(default=None, max_length=64)
+    outcome: Literal["all", "correct", "incorrect", "missing", "unscored"] = "all"
+
+
+class InspectComparisonOutput(MCPModel):
+    summary: str
+    monitoring: dict[str, Any]
+    resource_links: list[ResourceLinkContract]
+
+
 class CandidateInput(MCPModel):
     name: str = Field(min_length=1, max_length=255)
     base_model: str

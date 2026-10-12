@@ -416,3 +416,24 @@ inspection are MCP-ready. MCP readiness reuses its prerequisite validation resul
 instead of scanning the full training/validation population twice.
 
 Contract 7.0.0 removes the preparation-findings tools and status fields. Workshop continues to expose retained scripts, the selected process, execution receipts and publication validation. Dataset-scoped pipeline saves automatically retain the current script association; retrying older receipts does not restore it.
+
+Contract 7.1.0 makes native inference MCP-ready: `run_inference` accepts either
+chat messages or input-only decisions, matched to the deployment's recorded
+`inference_contract`. Decision results retain ordered probabilities and artifact
+identity through the same durable request lifecycle. `deploy_finetune` backfills
+successful historical training jobs through the automatic deployment service;
+existing deployments are reused and application routing is unchanged.
+
+Contract 7.2.0 adds `inspect_native_evaluation`: recorded model stages, provisional
+per-benchmark metrics and paginated, identity-aligned input/reference/probability
+samples. REST and MCP share the local indexed projection. Reads can enqueue local
+indexing of retained historical evidence, never provider inference. Calibration
+and final roles remain separate; a key selects one exact source row, including zero.
+The bounded discovery budget is 82 KiB, including native deployment backfill and
+the probability inspection tool; optional output schemas remain omitted.
+
+Contract 7.3.0 adds search, participant and outcome filters to native evaluation
+inspection. They apply to the full saved sample index before pagination; outcome
+matching uses raw recorded scores, scoped to a participant or any model. Soft
+targets never count as hard correctness. Aggregate metrics remain unchanged.
+An exact sample key is independent of, and cannot be combined with, these filters.

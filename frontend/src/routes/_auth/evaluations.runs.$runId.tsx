@@ -13,6 +13,7 @@ import {
 } from "@/components/evaluations/datapoint-filter";
 import { EvalWinnerCallout, PerModelOps } from "@/components/evaluations/eval-results-overview";
 import { renderPayload, type ViewMode } from "@/components/evaluations/payload-format";
+import { ProbabilityEvaluationPage } from "@/components/evaluations/probability-evaluation-page";
 import { RunComparison } from "@/components/evaluations/run-comparison";
 import { RunJudges } from "@/components/evaluations/run-judges";
 import { StatusBadge } from "@/components/evaluations/runs-table";
@@ -87,7 +88,7 @@ import { scoreChipClass, scoreFillClass, TONE_CHIP } from "@/lib/colors";
 import { formatElapsed } from "@/lib/formatters";
 import { humanizeKey } from "@/lib/label-case";
 import { notify } from "@/lib/notify";
-import { projectIdSearchSchema } from "@/lib/schemas";
+import { evaluationRunSearchSchema } from "@/lib/schemas";
 import { PROSE } from "@/lib/typography";
 import { cn, paginationFromPageLimit, paginationItems, scorePct } from "@/lib/utils";
 import type {
@@ -104,8 +105,8 @@ const DATA_SOURCE_LABEL: Record<string, string> = {
 };
 
 export const Route = createFileRoute("/_auth/evaluations/runs/$runId")({
-  component: EvalRunDetailPage,
-  validateSearch: projectIdSearchSchema,
+  component: EvaluationRunPage,
+  validateSearch: evaluationRunSearchSchema,
 });
 
 // Per-turn judge dimension columns (see per_turn_judge.py) — their presence is
@@ -225,6 +226,12 @@ interface ComparisonPayload {
 }
 
 const humanizeMetricName = humanizeKey;
+
+function EvaluationRunPage() {
+  const { runId } = Route.useParams();
+  const { format } = Route.useSearch();
+  return format === "decision" ? <ProbabilityEvaluationPage id={runId} /> : <EvalRunDetailPage />;
+}
 
 function EvalRunDetailPage() {
   const { runId } = Route.useParams();
@@ -354,19 +361,6 @@ function EvalRunDetailPage() {
             </div>
           ) : null}
 
-          {(run.warnings ?? []).length > 0 && (
-            <div className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
-              <p className="font-medium">Evaluator compatibility warnings</p>
-              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs">
-                {(run.warnings ?? []).map((warning, index) => (
-                  <li key={`${warning.evaluator}-${warning.severity}-${index}`}>
-                    {warning.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
           <div className="min-h-0 flex-1 overflow-auto">
             <Card className="flex flex-col gap-4 p-4">
               <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
@@ -488,22 +482,6 @@ function EvalRunDetailPage() {
                     >
                       <Icon.close />
                       Cancel
-                    </Button>
-                  )}
-                  {runStatus === "completed" && (
-                    <Button asChild size="sm">
-                      <Link
-                        search={{
-                          optimize: true,
-                          projectId,
-                          ...(run.capabilityId ? { capabilityId: run.capabilityId } : {}),
-                          ...(run.dataset ? { datasetId: run.dataset } : {}),
-                        }}
-                        to="/optimiser"
-                      >
-                        <Icon.optimiser />
-                        Optimise
-                      </Link>
                     </Button>
                   )}
                 </div>

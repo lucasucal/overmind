@@ -142,6 +142,7 @@ def test_completion_preserves_monitoring_manifest_and_final_observation(native):
     _run_reconcile(runner=runner)
     job.refresh_from_db()
     snapshot = training_monitoring.snapshot(job)
+    assert job.status == FinetuningJob.Status.DEPLOYING
     assert snapshot["current"]["monitoring_seconds"] == 3
     assert snapshot["current"]["optimizer_seconds"] == 12
     assert snapshot["probes"]["development"]["actual_rows"] == 1

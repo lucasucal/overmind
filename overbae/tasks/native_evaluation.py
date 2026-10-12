@@ -6,6 +6,16 @@ from django.utils import timezone
 
 from overbae.models import FinetuningJob, NativeEvaluationPlan, TrainingExperiment
 from overbae.services.native_evaluation import advance, ready_stages
+from overbae.services.native_evaluation_monitor import refresh_safely
+
+
+@shared_task(
+    name="overbae.tasks.native_evaluation.refresh_monitor", soft_time_limit=1200, time_limit=1260
+)
+def refresh_monitor(plan_id):
+    plan = NativeEvaluationPlan.objects.filter(pk=plan_id, deleted_at=None).first()
+    if plan is not None:
+        refresh_safely(plan)
 
 
 @shared_task(name="overbae.tasks.native_evaluation.reconcile")
@@ -27,9 +37,13 @@ def reconcile():
         state__in=["launched", "training", "evaluating", "incomplete"]
     ).select_related("project"):
         reconcile_experiment(experiment)
-    ids = NativeEvaluationPlan.objects.exclude(
-        state__in=["draft", "prepared", "paused", "completed", "failed", "submission_unknown"]
-    ).values_list("id", flat=True)
+    ids = (
+        NativeEvaluationPlan.objects.filter(deleted_at=None)
+        .exclude(
+            state__in=["draft", "prepared", "paused", "completed", "failed", "submission_unknown"]
+        )
+        .values_list("id", flat=True)
+    )
     for plan_id in ids.iterator():
         advance_plan.delay(str(plan_id))
 

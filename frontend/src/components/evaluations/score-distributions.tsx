@@ -2,7 +2,16 @@
 // horizontally (preserveAspectRatio="none"), so every stroke is non-scaling and
 // all text lives in HTML. Scores are 0–1 fractions, rendered as 0–100%.
 
-import { type ComponentType, type SVGProps, useState } from "react";
+import {
+  type ComponentType,
+  type SVGProps,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 
 import {
   boxStats,
@@ -11,11 +20,12 @@ import {
 } from "@/components/evaluations/score-distribution-math";
 import { HelpTip } from "@/components/finetuning/finetuning-chrome";
 import { Card } from "@/components/ui/card";
+import { GraphTooltip } from "@/components/ui/graph-tooltip";
 import { Icon } from "@/components/ui/icons";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { seriesColor } from "@/lib/colors";
 import { humanizeKey } from "@/lib/label-case";
-import { cn, scorePct } from "@/lib/utils";
+import { cn, plural, scorePct } from "@/lib/utils";
 
 export interface DistributionScore {
   name?: string | null;
@@ -86,8 +96,10 @@ const seriesMean = (s: Series): number => s.values.reduce((a, b) => a + b, 0) / 
 
 // viewBox is 0..100 wide (score %) × plotH tall (real pixels).
 
-const MIN_PLOT_H = 160; // px — overlay views need room even with few series
-const LANE_H = 24; // px per series lane
+const OVERLAY_PLOT_H = 180;
+const LANE_H = 48;
+const LANE_MARK_Y = 34;
+const AXIS_H = 24;
 const BIN_COUNT = 10;
 const AXIS_TICKS = [0, 25, 50, 75, 100];
 const KDE_TRIM = 0.02; // drop near-zero KDE tails so curves don't leave a hairline across the frame
@@ -106,12 +118,12 @@ const trimCurve = (curve: number[]): Array<{ x: number; d: number }> => {
 
 const GridLines = ({ horizontal, plotH }: { horizontal: boolean; plotH: number }) => (
   <>
-    {/* x=0 is the axis border on the SVG itself, so start at 25 */}
-    {AXIS_TICKS.slice(1).map((tick) => (
+    {AXIS_TICKS.slice(1, -1).map((tick) => (
       <line
         key={tick}
         stroke="var(--border)"
-        strokeOpacity={0.5}
+        strokeDasharray="3 3"
+        strokeOpacity={0.7}
         strokeWidth={1}
         vectorEffect="non-scaling-stroke"
         x1={tick}
@@ -121,11 +133,12 @@ const GridLines = ({ horizontal, plotH }: { horizontal: boolean; plotH: number }
       />
     ))}
     {horizontal &&
-      [1, 2, 3, 4].map((k) => (
+      [1, 2, 3].map((k) => (
         <line
           key={k}
           stroke="var(--border)"
-          strokeOpacity={0.5}
+          strokeDasharray="3 3"
+          strokeOpacity={0.7}
           strokeWidth={1}
           vectorEffect="non-scaling-stroke"
           x1={0}
@@ -177,22 +190,20 @@ const FlatTick = ({
 const isZeroVariance = (values: number[]): boolean =>
   Math.max(...values) - Math.min(...values) < 0.005;
 
-const ScoresView = ({ series, plotH }: { series: Series[]; plotH: number }) => {
-  const laneH = plotH / series.length;
+const ScoresView = ({ series }: { series: Series[] }) => {
   return (
     <>
       {series.map((s, i) => {
-        const cy = (i + 0.5) * laneH;
-        const halfH = Math.max(3, Math.min(laneH * 0.3, 8));
+        const cy = i * LANE_H + LANE_MARK_Y;
         return (
           <rect
             fill={s.color}
             fillOpacity={0.85}
-            height={halfH * 2}
+            height={12}
             key={s.key}
-            width={Math.max(0.5, xPos(seriesMean(s)))}
+            width={Math.max(0, Math.min(100, xPos(seriesMean(s))))}
             x={0}
-            y={cy - halfH}
+            y={cy - 6}
           />
         );
       })}
@@ -200,28 +211,24 @@ const ScoresView = ({ series, plotH }: { series: Series[]; plotH: number }) => {
   );
 };
 
-/** HTML, not `<text>`: the plot SVG stretches, so SVG text would distort. Long
- * bars carry the label inside the bar end so the frame never clips it. */
-const ScoresLabels = ({ series }: { series: Series[] }) => (
-  <div aria-hidden className="pointer-events-none absolute inset-0">
-    {series.map((s, i) => {
-      const pct = scorePct(seriesMean(s));
-      const inside = pct > 85;
-      return (
-        <span
-          className={cn(
-            "absolute -translate-y-1/2 font-mono text-xs font-medium leading-none tabular-nums",
-            inside ? "-translate-x-full pr-1.5 text-background" : "pl-1.5 text-muted-foreground"
-          )}
-          key={s.key}
-          style={{ left: `${pct}%`, top: `${((i + 0.5) / series.length) * 100}%` }}
-        >
-          {pct}%
-        </span>
-      );
-    })}
-  </div>
-);
+function SeriesLabel({ series, showMean = false }: { series: Series; showMean?: boolean }) {
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 text-xs leading-4">
+      <span
+        aria-hidden
+        className="size-2 shrink-0 rounded-xs"
+        style={{ background: series.color }}
+      />
+      <span
+        className="min-w-0 flex-1 truncate"
+        title={`${series.label} · mean ${scorePct(seriesMean(series))}% · n=${series.values.length}`}
+      >
+        {series.label}
+      </span>
+      {showMean && <span className="shrink-0 tabular-nums">{scorePct(seriesMean(series))}%</span>}
+    </div>
+  );
+}
 
 const DistributionView = ({ series, plotH }: { series: Series[]; plotH: number }) => (
   <>
@@ -281,8 +288,8 @@ const HistogramView = ({
                   fillOpacity={0.85}
                   height={h}
                   key={series[si].key}
-                  width={slot - 2}
-                  x={bin * slot + 1}
+                  width={slot - 0.6}
+                  x={bin * slot + 0.3}
                   y={stackTop}
                 />
               );
@@ -294,15 +301,14 @@ const HistogramView = ({
   );
 };
 
-const BoxView = ({ series, plotH }: { series: Series[]; plotH: number }) => {
-  const laneH = plotH / series.length;
+const BoxView = ({ series }: { series: Series[] }) => {
   return (
     <>
       {series.map((s, i) => {
         const stats = boxStats(s.values);
         if (!stats) return null;
-        const cy = (i + 0.5) * laneH;
-        const boxHalf = Math.max(2, Math.min(laneH * 0.28, 9));
+        const cy = i * LANE_H + LANE_MARK_Y;
+        const boxHalf = 8;
         // A zero-width box is invisible at the frame edge for all-100% data.
         if (isZeroVariance(s.values)) {
           return (
@@ -364,13 +370,12 @@ const BoxView = ({ series, plotH }: { series: Series[]; plotH: number }) => {
   );
 };
 
-const ViolinView = ({ series, plotH }: { series: Series[]; plotH: number }) => {
-  const laneH = plotH / series.length;
+const ViolinView = ({ series }: { series: Series[] }) => {
   return (
     <>
       {series.map((s, i) => {
-        const cy = (i + 0.5) * laneH;
-        const amp = Math.max(3, Math.min(laneH / 2 - 3, 16));
+        const cy = i * LANE_H + LANE_MARK_Y;
+        const amp = 10;
         if (isZeroVariance(s.values)) {
           return (
             <FlatTick
@@ -408,6 +413,161 @@ const ViolinView = ({ series, plotH }: { series: Series[]; plotH: number }) => {
   );
 };
 
+function ScorePlotHover({ series, view }: { series: Series[]; view: ViewMode }) {
+  const tooltipId = useId();
+  const [hover, setHover] = useState<{
+    index: number;
+    fraction: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const summaries = useMemo(() => series.map((s) => boxStats(s.values)!), [series]);
+  const bins = useMemo(() => series.map((s) => histogramBins(s.values, BIN_COUNT)), [series]);
+  const curves = useMemo(() => series.map((s) => kdeCurve(s.values)), [series]);
+  const laneAligned = LANE_VIEWS.has(view);
+  const bin = Math.min(BIN_COUNT - 1, Math.floor((hover?.fraction ?? 0) * BIN_COUNT));
+  const densityIndex = Math.round((hover?.fraction ?? 0) * (curves[0].length - 1));
+  const selectedIndex = Math.min(series.length - 1, hover?.index ?? 0);
+  const selected = series[selectedIndex];
+  const summary = summaries[selectedIndex];
+  const percentage = (value: number) => `${scorePct(value)}%`;
+  let label = `Mean score · ${plural(selected.values.length, "sample")}`;
+  let payload = [{ color: selected.color, name: selected.label, value: summary.mean }];
+  let format = percentage;
+  if (view === "histogram") {
+    label = `Score ${bin * 10}%–${(bin + 1) * 10}%`;
+    payload = series.map((s, index) => ({
+      color: s.color,
+      name: s.label,
+      value: bins[index][bin],
+    }));
+    format = (value) => `${value} ${value === 1 ? "sample" : "samples"}`;
+  } else if (view === "distribution") {
+    label = `Relative density · score ${scorePct(hover?.fraction ?? 0)}%`;
+    payload = series.map((s, index) => ({
+      color: s.color,
+      name: s.label,
+      value: curves[index][densityIndex],
+    }));
+    format = (value) => value.toFixed(3);
+  } else if (view === "box" || view === "violin") {
+    label = `${selected.label} · ${plural(selected.values.length, "sample")}`;
+    payload = [
+      { color: selected.color, name: "Minimum", value: summary.min },
+      { color: selected.color, name: "25th percentile", value: summary.q1 },
+      { color: selected.color, name: "Median", value: summary.median },
+      { color: selected.color, name: "75th percentile", value: summary.q3 },
+      { color: selected.color, name: "Maximum", value: summary.max },
+      { color: selected.color, name: "Mean", value: summary.mean },
+    ];
+  }
+
+  useLayoutEffect(() => {
+    const tooltip = tooltipRef.current;
+    if (!tooltip || !hover) return;
+    const { width, height } = tooltip.getBoundingClientRect();
+    tooltip.style.left = `${Math.max(12, Math.min(hover.x + 12, window.innerWidth - width - 12))}px`;
+    const below = hover.y + 12;
+    tooltip.style.top = `${Math.max(12, below + height <= window.innerHeight - 12 ? below : hover.y - height - 12)}px`;
+  }, [hover]);
+
+  return (
+    <>
+      <div
+        aria-describedby={hover ? tooltipId : undefined}
+        aria-description={
+          laneAligned
+            ? "Use Up and Down to inspect each series."
+            : "Use Left and Right to inspect scores."
+        }
+        aria-label="Evaluation score chart"
+        aria-roledescription="chart"
+        className="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        onBlur={() => setHover(null)}
+        onFocus={(event) => {
+          if (!event.currentTarget.matches(":focus-visible")) return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          setHover({ fraction: 0, index: 0, x: rect.left + 12, y: rect.top + LANE_MARK_Y });
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setHover(null);
+            return;
+          }
+          const keys = laneAligned ? ["ArrowUp", "ArrowDown"] : ["ArrowLeft", "ArrowRight"];
+          if (![...keys, "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          const rect = event.currentTarget.getBoundingClientRect();
+          const direction = event.key === keys[0] ? -1 : 1;
+          const last = laneAligned ? series.length - 1 : view === "histogram" ? BIN_COUNT - 1 : 60;
+          const current = laneAligned
+            ? (hover?.index ?? 0)
+            : view === "histogram"
+              ? bin
+              : densityIndex;
+          const next =
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? last
+                : Math.max(0, Math.min(last, current + direction));
+          const fraction = laneAligned
+            ? summaries[next].mean
+            : view === "histogram"
+              ? (next + 0.5) / BIN_COUNT
+              : next / last;
+          setHover({
+            fraction,
+            index: laneAligned ? next : 0,
+            x: rect.left + fraction * rect.width,
+            y: rect.top + (laneAligned ? next * LANE_H + LANE_MARK_Y : rect.height / 2),
+          });
+        }}
+        onMouseLeave={() => setHover(null)}
+        onMouseMove={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const y = event.clientY - rect.top;
+          if (laneAligned && y >= series.length * LANE_H) {
+            setHover(null);
+            return;
+          }
+          setHover({
+            fraction: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+            index: laneAligned
+              ? Math.min(series.length - 1, Math.max(0, Math.floor(y / LANE_H)))
+              : 0,
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }}
+        role="application"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: The chart implements arrow-key navigation, matching Recharts' focusable application role.
+        tabIndex={0}
+      />
+      {hover && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 border-l border-dashed border-muted-foreground/70"
+          data-slot="score-cursor"
+          style={{ left: `${hover.fraction * 100}%` }}
+        />
+      )}
+      {hover &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-50 w-80 max-w-[calc(100vw-1.5rem)] [&>[role=tooltip]]:w-full [&>[role=tooltip]]:min-w-0"
+            id={tooltipId}
+            ref={tooltipRef}
+          >
+            <GraphTooltip active label={label} payload={payload} valueFormatter={format} />
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
 export function ScoreDistributions({
   scores,
   variants,
@@ -421,10 +581,8 @@ export function ScoreDistributions({
   const series = buildSeries(scores, variants, metrics);
   if (series.length === 0) return null;
 
-  // Overlay views share the lane-derived height so toggling doesn't jump.
-  const plotH = Math.max(MIN_PLOT_H, series.length * LANE_H);
-  const laneH = plotH / series.length;
   const laneAligned = LANE_VIEWS.has(view);
+  const plotH = laneAligned ? series.length * LANE_H + AXIS_H : OVERLAY_PLOT_H;
 
   // 4 equal intervals of a whole-number step, so tick labels land on integers.
   const binned = series.map((s) => histogramBins(s.values, BIN_COUNT));
@@ -436,13 +594,12 @@ export function ScoreDistributions({
   );
   const yStep = Math.max(1, Math.ceil(peakCount / 4));
   const yMax = yStep * 4;
-  const yTicks = [4, 3, 2, 1, 0].map((k) => k * yStep);
 
   return (
-    <Card className="flex flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <Card className="min-w-0">
+      <div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2.5">
         <Icon.chartBar className="size-4 text-muted-foreground" />
-        <h3 className="text-xs">Scores</h3>
+        <h3 className="text-sm leading-none">Scores</h3>
         {/* Radix tooltips crash without a provider and there is no app-wide one. */}
         <TooltipProvider delayDuration={200}>
           <HelpTip
@@ -452,7 +609,7 @@ export function ScoreDistributions({
         </TooltipProvider>
         <div
           aria-label="Score view"
-          className="ml-auto inline-flex items-center gap-0.5 rounded-sm border border-border/60 p-0.5"
+          className="ml-auto flex max-w-full flex-wrap items-center gap-0.5 rounded-sm border border-border/60 p-0.5"
           role="group"
         >
           {VIEWS.map((option) => (
@@ -475,80 +632,51 @@ export function ScoreDistributions({
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 sm:flex-row">
-        {/* In lane views each legend row takes the exact lane geometry, so the
-            name sits centred on its own lane. */}
-        <div
-          className={cn("flex shrink-0 flex-col sm:w-48", !laneAligned && "gap-1.5")}
-          style={laneAligned ? { height: plotH } : undefined}
-        >
+      {!laneAligned && (
+        <div className="flex flex-wrap gap-x-5 gap-y-1.5 border-b border-border/70 px-3 py-2">
           {series.map((s) => (
-            <div
-              className="flex min-w-0 items-center gap-1.5"
-              key={s.key}
-              style={laneAligned ? { height: laneH } : undefined}
-            >
-              <span
-                aria-hidden
-                className="size-2 shrink-0 rounded-xs"
-                style={{ background: s.color }}
-              />
-              <span
-                className="min-w-0 flex-1 truncate font-mono text-xs text-foreground"
-                title={`${s.label} · mean ${scorePct(seriesMean(s))}% · n=${s.values.length}`}
-              >
-                {s.label}
-              </span>
-            </div>
+            <SeriesLabel key={s.key} series={s} />
           ))}
         </div>
-
-        <div className="flex min-w-0 flex-1 gap-1.5">
-          <div className="flex shrink-0 gap-1" style={{ height: plotH }}>
-            <span
-              className={cn(
-                "rotate-180 self-center text-xs text-muted-foreground/70 [writing-mode:vertical-rl]",
-                view !== "histogram" && "invisible"
-              )}
-            >
-              Count
-            </span>
-            <div className="flex w-5 flex-col items-end justify-between text-xs leading-none tabular-nums text-muted-foreground/70">
-              {view === "histogram" && yTicks.map((tick) => <span key={tick}>{tick}</span>)}
+      )}
+      <div className="relative">
+        <svg
+          aria-hidden
+          className="block w-full overflow-visible"
+          data-slot="score-plot"
+          height={plotH}
+          preserveAspectRatio="none"
+          viewBox={`0 0 100 ${plotH}`}
+        >
+          <GridLines horizontal={view === "histogram"} plotH={plotH} />
+          {view === "scores" ? (
+            <ScoresView series={series} />
+          ) : view === "distribution" ? (
+            <DistributionView plotH={plotH} series={series} />
+          ) : view === "histogram" ? (
+            <HistogramView plotH={plotH} series={series} yMax={yMax} />
+          ) : view === "box" ? (
+            <BoxView series={series} />
+          ) : (
+            <ViolinView series={series} />
+          )}
+        </svg>
+        {laneAligned ? (
+          series.map((s, index) => (
+            <div className="absolute inset-x-3" key={s.key} style={{ top: index * LANE_H + 6 }}>
+              <SeriesLabel series={s} showMean={view === "scores"} />
             </div>
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="relative">
-              <svg
-                aria-hidden
-                className="block w-full overflow-visible border-b border-l border-border/60"
-                height={plotH}
-                preserveAspectRatio="none"
-                viewBox={`0 0 100 ${plotH}`}
-              >
-                <GridLines horizontal={view === "histogram"} plotH={plotH} />
-                {view === "scores" ? (
-                  <ScoresView plotH={plotH} series={series} />
-                ) : view === "distribution" ? (
-                  <DistributionView plotH={plotH} series={series} />
-                ) : view === "histogram" ? (
-                  <HistogramView plotH={plotH} series={series} yMax={yMax} />
-                ) : view === "box" ? (
-                  <BoxView plotH={plotH} series={series} />
-                ) : (
-                  <ViolinView plotH={plotH} series={series} />
-                )}
-              </svg>
-              {view === "scores" && <ScoresLabels series={series} />}
-            </div>
-            <div className="flex justify-between text-xs tabular-nums text-muted-foreground/70">
-              {AXIS_TICKS.map((tick) => (
-                <span key={tick}>{tick}%</span>
-              ))}
-            </div>
-            <div className="text-center text-xs text-muted-foreground/70">Score</div>
-          </div>
+          ))
+        ) : (
+          <span className="pointer-events-none absolute top-2 left-3 bg-card/90 px-1 text-xs tabular-nums text-muted-foreground">
+            {view === "histogram" ? `${yMax} samples` : "Relative density"}
+          </span>
+        )}
+        <div className="pointer-events-none absolute inset-x-3 bottom-1.5 flex justify-between text-xs tabular-nums text-muted-foreground">
+          <span className="bg-card/90 px-1">0%</span>
+          <span className="bg-card/90 px-1">100%</span>
         </div>
+        <ScorePlotHover key={view} series={series} view={view} />
       </div>
     </Card>
   );

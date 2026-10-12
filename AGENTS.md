@@ -93,6 +93,8 @@ Each line is the invariant; the named skill section carries the mechanics.
 
 - Typed decision training uses Unsloth `FastDecisionModel`/`DecisionTrainer` on its separately pinned runtime, supports Modal LoRA on one GPU and accepts a native `decision` column with runtime options and full target distributions. Clef encoding retains upstream option spans and an explicit order mapping; full-precision head weights accompany every adapter. Shared preparation, monitoring, operational receipts and MCP lifecycle remain authoritative. Native `hyperparameters.pre_training_baseline` defaults to true; false skips only the initial development baseline and retains checkpoint/final validation. Console and MCP expose the choice, receipts pin it, and worker telemetry records an omitted baseline as not requested. The native coding agent explores the source and user request before declaring evidence-backed per-family target semantics; unknown meaning stays unknown. The measured contract selects distribution cross entropy or mixed distribution/ordinal-mean supervision; it never invents a distribution from a mean or turns soft labels into argmax text. Decision checkpoints use typed probabilities and do not enter chat deployment/evaluation. Detail: backend-architecture § Native decision training.
 
+- Successful training automatically deploys every model through its matching inference runtime. Native decision deployments preserve verified adapter/head artifacts, recorded single-GPU hardware and a pinned serving release; readiness requires a real probability prediction. `deploy_finetune` backfills historical successes without changing routing. Chat aliases and benchmark choices remain separate. REST and MCP share durable typed inference receipts. Detail: backend-architecture § Native decision serving.
+
 - Training launch receipts pin the runtime release/environment, exact cells and requested recipe. Stall detection counts native validation and checkpoint-stage progress independently of optimizer steps; a committer heartbeat alone does not establish forward progress. Reusing a project request key returns the same job; a changed recipe conflicts. Provider intent is persisted before dispatch; an unknown acknowledgement is reconciled against that job's provider metadata, never resubmitted. Explicit settings that require a clamp are rejected. Native paired evaluation uses its own frozen calibration/final plan, retains incompatible rows, keeps references local and fits calibration before final predictions. Downloadable run records distinguish recorded GPU spend from unreported components. Detail: backend-architecture § Reproducible training experiments.
 
 - Development monitoring freezes `hyperparameters.monitoring` across readiness,
@@ -153,6 +155,14 @@ Each line is the invariant; the named skill section carries the mechanics.
   reuses saved inputs; it never resubmits provider inference. A paused native
   collector can be recovered only with its exact recorded provider call ID.
 
+  Native benchmark workers publish checksum-bound prediction chunks under the
+  exact provider call ID. Background collection verifies runtime, input and
+  artifact identity before indexing inputs, references and outputs locally.
+  Console and `inspect_native_evaluation` read that paginated projection, including
+  provisional metrics and unavailable telemetry. Completed historical evidence can
+  be indexed without another provider call. Calibration remains separate from final
+  scoring; ordinal means never become invented probability references.
+
 - Benchmark selection is separate from serving: capability `benchmark_model` selects a ready trained model, or null for the codebase incumbent. New training jobs snapshot the primary choice in `baseline_model`; `active_model` only controls serving. Chat-training setup can pin additional benchmark models for the same eval set and dataset; they and the selected training bases are scored before training when benchmarking is enabled. Trained models are scored after training when evaluations are enabled. MCP `set_benchmark_model` sets the capability default.
 
 - Foundation catalogue entries carry nullable `openrouter_id` mappings. Base benchmarks verify the mapped ID or an exact declared checkpoint against OpenRouter's catalogue before using it, ahead of unused ready hosted bases. MCP/REST model catalogues distinguish `available`, `not_listed` and `catalog_unavailable`; missing matches never substitute a different size or variant. Started evaluations and unresolved deployments remain pinned. Detail: backend-architecture § Serving and weights.
@@ -185,7 +195,7 @@ Each line is the invariant; the named skill section carries the mechanics.
   retained-script condition citations and a returned `flow` entity. Runtime receipts
   separate those declarations from actual input cells, row counts and fingerprints.
   The Console keeps full-size existing cells at scale 1 on a grid-snapped canvas:
-  progress runs downward; sibling branches align on the same horizontal layer. The Process control shows current execution facts. Corrections replace the displayed process; there is no repair-history or restore view. The preparation graph follows verified run inputs, partition members and derivations across datasets; exact consumer-pinned cells remain reproducible internally. Detail: data-workshop skill.
+  progress runs downward; sibling branches align on the same horizontal layer. Corrections replace the displayed process; there is no repair-history or restore view. The preparation graph follows verified run inputs, partition members and derivations across datasets; exact consumer-pinned cells remain reproducible internally. Detail: data-workshop skill.
   Each entrypoint exposes its meaningful step logic; helpers hold reusable utilities.
   Cells expose receipt-backed transformation attribution and allow inspection of all
   checksum-verified retained package files. External imports remain distinct from

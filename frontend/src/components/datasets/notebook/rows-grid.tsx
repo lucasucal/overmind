@@ -253,56 +253,70 @@ function FilterAdd({ columns, onAdd }: { columns: string[]; onAdd: (f: RowFilter
           Filter
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-3">
-        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 text-xs">
+      <PopoverContent
+        align="start"
+        aria-label="Filter rows"
+        className="w-72 max-w-[calc(100vw-2rem)] p-0 text-xs"
+      >
+        <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 border-b border-border/70 px-2.5 py-1.5">
           <span className="text-muted-foreground">Column</span>
           <Select onValueChange={(v) => setDraft({ ...draft, field: v })} value={draft.field}>
-            <SelectTrigger aria-label="Column" className="w-full" size="sm">
+            <SelectTrigger
+              aria-label="Column"
+              className="w-full border-border bg-transparent hover:bg-accent/50"
+              size="xs"
+            >
               <SelectValue placeholder="Column" />
             </SelectTrigger>
             <SelectContent>
               {columns.map((c) => (
-                <SelectItem key={c} value={c}>
+                <SelectItem className="text-xs" key={c} value={c}>
                   {c}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        </div>
+        <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 border-b border-border/70 px-2.5 py-1.5">
           <span className="text-muted-foreground">Condition</span>
           <Select
             onValueChange={(v) => setDraft({ ...draft, op: v as RowFilter["op"] })}
             value={draft.op}
           >
-            <SelectTrigger aria-label="Condition" className="w-full" size="sm">
+            <SelectTrigger
+              aria-label="Condition"
+              className="w-full border-border bg-transparent hover:bg-accent/50"
+              size="xs"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {FILTER_OPS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
+                <SelectItem className="text-xs" key={o.value} value={o.value}>
                   {o.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {needsValue && (
-            <>
-              <span className="text-muted-foreground">Value</span>
-              <Input
-                aria-label="Value"
-                autoFocus
-                onChange={(e) => setDraft({ ...draft, value: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") add();
-                }}
-                size="sm"
-                value={draft.value ?? ""}
-              />
-            </>
-          )}
         </div>
-        <div className="mt-3 flex justify-end">
-          <Button onClick={add} size="sm">
-            Add
+        {needsValue && (
+          <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 border-b border-border/70 px-2.5 py-1.5">
+            <span className="text-muted-foreground">Value</span>
+            <Input
+              aria-label="Value"
+              className="border-border"
+              onChange={(e) => setDraft({ ...draft, value: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") add();
+              }}
+              size="xs"
+              value={draft.value ?? ""}
+            />
+          </div>
+        )}
+        <div className="flex justify-end px-2.5 py-1.5">
+          <Button onClick={add} size="xs" variant="secondary">
+            Add filter
           </Button>
         </div>
       </PopoverContent>
@@ -490,20 +504,24 @@ export function RowsGrid({
                   const active = sort?.field === c.name;
                   return (
                     <th
+                      aria-sort={
+                        active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none"
+                      }
                       className="max-w-[26rem] border-r border-b border-border/70 px-2 py-1.5 text-left font-normal last:border-r-0"
                       key={c.name}
                       scope="col"
                     >
                       <span className="flex items-center gap-1">
-                        <TypeMark type={c.type} />
                         <button
+                          aria-label={`Sort by ${c.name}`}
                           className={cn(
-                            "flex items-center gap-1 text-foreground hover:underline",
+                            "flex min-h-6 flex-1 items-center gap-1 text-left text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             active && "font-semibold"
                           )}
                           onClick={() => toggleSort(c.name)}
                           type="button"
                         >
+                          <TypeMark type={c.type} />
                           {c.name}
                           {active ? (
                             sort?.dir === "asc" ? (

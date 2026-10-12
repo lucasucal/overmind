@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Chip } from "@/components/ui/chip";
 import { Icon } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
+import { SortableHeader } from "@/components/ui/sortable-header";
+import { useTableSort } from "@/hooks/use-table-sort";
 import { PROSE } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import type { Capability, CapabilityFlowToolArgument } from "@/openapi";
@@ -64,18 +66,37 @@ function RailRow({ entry }: { entry: ComponentEntry }) {
 }
 
 function ArgumentsTable({ args }: { args: CapabilityFlowToolArgument[] }) {
+  const { sort, onSort, sortRows } = useTableSort<"name" | "type" | "description">();
   return (
     <div className="-mx-4 overflow-x-auto">
       <table className="w-full text-xs [&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4">
         <thead>
           <tr className="pixel-label border-b border-border/60 text-left text-xs text-muted-foreground">
-            <th className="py-1.5 pr-4 font-medium">Name</th>
-            <th className="py-1.5 pr-4 font-medium">Type</th>
-            <th className="w-full py-1.5 font-medium">Description</th>
+            <SortableHeader
+              className="py-1.5 pr-4 font-medium"
+              label="Name"
+              onSort={onSort}
+              sort={sort}
+              sortKey="name"
+            />
+            <SortableHeader
+              className="py-1.5 pr-4 font-medium"
+              label="Type"
+              onSort={onSort}
+              sort={sort}
+              sortKey="type"
+            />
+            <SortableHeader
+              className="w-full py-1.5 font-medium"
+              label="Description"
+              onSort={onSort}
+              sort={sort}
+              sortKey="description"
+            />
           </tr>
         </thead>
         <tbody className="divide-y divide-border/70">
-          {args.map((arg) => (
+          {sortRows(args, (arg, key) => arg[key]).map((arg) => (
             <tr key={arg.name}>
               <td className="whitespace-nowrap py-2 pr-4 align-top">
                 <span className="font-mono text-xs text-foreground">{arg.name}</span>

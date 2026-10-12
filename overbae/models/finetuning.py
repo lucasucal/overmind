@@ -401,6 +401,7 @@ class NativeEvaluationPlan(models.Model):
     calibration = models.JSONField(default=dict)
     results = models.JSONField(default=dict)
     error = models.TextField(blank=True, default="")
+    deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

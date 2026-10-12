@@ -99,7 +99,7 @@ function Canvas({
 }: Props) {
   const wrapper = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(960);
-  const [inset, setInset] = useState(40);
+  const [inset, setInset] = useState(16);
   const [positions, savePositions] = usePersistedState<Record<string, XYPosition>>(storageKey, {});
   const [nodes, setNodes, onNodesChange] = useNodesState<CellNode>([]);
   const { getNodes, getViewport, setViewport } = useReactFlow<CellNode>();
@@ -123,8 +123,9 @@ function Canvas({
     if (!element) return;
     const observer = new ResizeObserver(() => {
       const container = Math.min(1280, element.clientWidth);
-      setWidth(Math.max(1, container - 40 - (window.innerWidth >= 640 ? 16 : 8)));
-      setInset(40 + (element.clientWidth - container) / 2);
+      const padding = window.innerWidth >= 640 ? 16 : 8;
+      setWidth(Math.max(1, container - 40 - padding));
+      setInset(padding + (element.clientWidth - container) / 2);
     });
     observer.observe(element);
     return () => observer.disconnect();
@@ -300,8 +301,9 @@ function Canvas({
           variant={BackgroundVariant.Dots}
         />
         <Controls
-          className="!rounded-sm !border !border-border !bg-card !shadow-none [&>button]:!border-border/60 [&>button]:!bg-card [&>button:hover]:!bg-accent [&_svg]:!fill-foreground"
+          className="!right-1.5 !bottom-3 !m-0 !rounded-sm !border !border-border !bg-card !shadow-none [&>button]:!border-border/60 [&>button]:!bg-card [&>button:hover]:!bg-accent [&_svg]:!fill-foreground"
           fitViewOptions={{ maxZoom: 1, minZoom: 0.25, padding: 0.18 }}
+          position="bottom-right"
           showInteractive={false}
         >
           <ControlButton
@@ -325,7 +327,7 @@ function Canvas({
         {showMinimap && (
           <MiniMap
             ariaLabel="Dataset transformation minimap"
-            className="!rounded-sm !border !border-border !bg-card"
+            className="!mr-12 !rounded-sm !border !border-border !bg-card"
             maskColor="color-mix(in oklab, var(--muted) 70%, transparent)"
             nodeColor="var(--muted-foreground)"
             nodeStrokeWidth={0}

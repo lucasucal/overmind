@@ -231,15 +231,13 @@ def test_readiness_treats_legacy_ft_as_train():
     assert estimate.structuredContent["error"]["code"] == "finetune_not_ready"
 
 
-def test_readiness_classifies_selected_capability_and_defers_to_data_for_none(monkeypatch):
+def test_readiness_classifies_selected_capability_and_defers_to_data_for_none(fake_llm):
     context = _context()
     capability, dataset, _, _ = training_setup(context)
     capability.description = "Write Python code."
     capability.save(update_fields=["description"])
-    monkeypatch.setattr(
-        "overbae.services.codebase.task_type.call_llm",
-        lambda *args, **kwargs: ('{"task_type":"code_generation"}', {}),
-    )
+    fake_llm.decide = lambda _key, _question: "code_generation"
+    fake_llm.on("Classify the task an AI capability", '{"task_type":"code_generation"}')
     selected = _call(
         "check_finetune_readiness",
         {"dataset": str(dataset.id), "capability": str(capability.id)},
@@ -956,8 +954,8 @@ def test_native_readiness_uses_explicit_full_cell_and_external_validation_withou
     assert body["dataset"]["validation"]["stats"]["train_examples"] == 12
     assert body["dataset"]["validation"]["stats"]["val_examples"] == 3
     assert body["training_contract"]["inference_contract"] == "decision"
-    assert body["task_type"] == "decision"
-    assert body["task_type_source"] == "declared_contract"
+    assert body["task_type"] == "unknown"
+    assert body["task_type_source"] == "unknown"
     assert body["recommendations"] == []
     assert "Qwen/Qwen3-0.6B" in {model for tier in body["catalog"].values() for model in tier}
     assert "google/gemma-4-31B-it" not in {

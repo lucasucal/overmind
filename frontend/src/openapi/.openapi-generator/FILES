@@ -21,6 +21,7 @@ apis/EvaluatorsApi.ts
 apis/FeedbackApi.ts
 apis/FinetuningJobsApi.ts
 apis/HealthApi.ts
+apis/InferenceRequestsApi.ts
 apis/McpOauthApi.ts
 apis/ModelsApi.ts
 apis/NativeEvaluationsApi.ts
@@ -138,6 +139,8 @@ models/DatasetValidateRequestRequest.ts
 models/DatasetValidationResponse.ts
 models/DatasetValidationStats.ts
 models/DecisionComparisonRequestRequest.ts
+models/DecisionInputKindEnum.ts
+models/DecisionInputRequest.ts
 models/DecisionModelOption.ts
 models/DecisionParticipantRequest.ts
 models/DecisionPerformance.ts
@@ -173,6 +176,9 @@ models/EvalVariant.ts
 models/EvalVariantModeEnum.ts
 models/EvalVariantRequest.ts
 models/EvaluateIterationRequest.ts
+models/EvaluationActivity.ts
+models/EvaluationActivityDataset.ts
+models/EvaluationActivityKindEnum.ts
 models/EvaluationContextCheck.ts
 models/EvaluationContextReport.ts
 models/EvaluationContextRequestRequest.ts
@@ -242,9 +248,14 @@ models/GuestSession.ts
 models/ImportVersionRequest.ts
 models/InferenceActivity.ts
 models/InferenceActivityPoint.ts
+models/InferenceContractEnum.ts
 models/InferenceFailure.ts
+models/InferenceInputRequest.ts
 models/InferenceLiveStats.ts
+models/InferenceMessageRequest.ts
+models/InferenceMessageRoleEnum.ts
 models/InferenceMetrics.ts
+models/InferenceReceipt.ts
 models/InputSourceEnum.ts
 models/InspectUploadRequest.ts
 models/IntegrationTypeEnum.ts
@@ -259,8 +270,17 @@ models/ModelCheckpoints.ts
 models/ModelDefaults.ts
 models/ModelSwapPrompt.ts
 models/ModelTierEnum.ts
+models/NativeBenchmarkProgress.ts
+models/NativeCallProgress.ts
 models/NativeEvaluation.ts
 models/NativeEvaluationRequestRequest.ts
+models/NativeEvaluationSuite.ts
+models/NativeEvaluationSuiteRequest.ts
+models/NativeLiveMetric.ts
+models/NativeModelProgress.ts
+models/NativeMonitor.ts
+models/NativeSample.ts
+models/NativeSamplePrediction.ts
 models/NullEnum.ts
 models/OpenrouterKeySourceEnum.ts
 models/OpenrouterStatusEnum.ts
@@ -289,6 +309,7 @@ models/PaginatedDeployedModelList.ts
 models/PaginatedEvalRunListList.ts
 models/PaginatedEvalSampleListList.ts
 models/PaginatedEvalSetList.ts
+models/PaginatedEvaluationActivityList.ts
 models/PaginatedEvaluatorListList.ts
 models/PaginatedExplorationList.ts
 models/PaginatedFinetuningJobEventList.ts

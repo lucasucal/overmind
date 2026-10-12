@@ -4,6 +4,7 @@ import { EntityRef } from "@/components/entity-ref";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icons";
 import { SearchInput } from "@/components/ui/search-input";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import {
   Table,
   TableBody,
@@ -12,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useTableSort } from "@/hooks/use-table-sort";
 import { cn } from "@/lib/utils";
 import type { FinetuningJob } from "@/openapi";
 
@@ -193,6 +195,7 @@ export function RunConfiguration({
         return matchingRows.length ? [{ ...section, rows: matchingRows }] : [];
       })
     : sections;
+  const { sort, onSort, sortRows } = useTableSort<"setting" | "value">();
   const updateSearch = (value: string) => {
     setSearch(value);
     if (tableContainer.current) tableContainer.current.scrollTop = 0;
@@ -236,8 +239,20 @@ export function RunConfiguration({
           >
             <TableHeader>
               <TableRow>
-                <TableHead className="w-2/5 px-4">Setting</TableHead>
-                <TableHead className="px-4">Value</TableHead>
+                <SortableHeader
+                  className="w-2/5 px-4"
+                  label="Setting"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="setting"
+                />
+                <SortableHeader
+                  className="px-4"
+                  label="Value"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="value"
+                />
               </TableRow>
             </TableHeader>
             {visibleSections.length === 0 && (
@@ -262,7 +277,13 @@ export function RunConfiguration({
                   </TableHead>
                 </TableRow>
                 {section.rows.length ? (
-                  section.rows.map((row) => (
+                  sortRows(section.rows, (row, key) =>
+                    key === "setting"
+                      ? row.label
+                      : typeof row.value === "number"
+                        ? row.value
+                        : configurationValue(row.value)
+                  ).map((row) => (
                     <TableRow key={JSON.stringify(row.path)}>
                       <TableHead
                         className="whitespace-normal break-words bg-transparent px-4 py-2 align-top font-normal"

@@ -731,6 +731,10 @@ class CapabilitySerializer(serializers.ModelSerializer):
     def validate_benchmark_model(self, value):
         if value is None:
             return value
+        if value.inference_contract != "chat":
+            raise serializers.ValidationError(
+                "Decision models use native probability comparisons, not chat benchmarks."
+            )
         project_id = self.instance.project_id if self.instance else self.initial_data.get("project")
         if str(value.project_id) != str(project_id):
             raise serializers.ValidationError("The benchmark model must belong to this project.")
@@ -2621,6 +2625,7 @@ class DeployedModelSerializer(serializers.ModelSerializer):
             "project",
             "model_id",
             "deployment_progress",
+            "inference_contract",
             "status",
             "quantization",
             "base_model_id",

@@ -31,8 +31,19 @@ Do not let platform evaluations or smoke calls stand in for application usage.
 
 ## Test or activate
 
+Successful training automatically starts deployment using the model's inference
+contract. `deploy_finetune` backfills a completed historical job and reuses its
+existing deployment; it never changes application routing. Failed or deleted
+deployments still require `retry_deployment`.
+
 Use `run_inference` only for a requested test on a ready deployment, with the
-user's supplied messages and output budget. Preserve explicit `max_tokens`;
+user's supplied messages and output budget, or input-only `decisions` for a
+decision deployment. Decisions contain state, question, kind and ordered options;
+they never contain targets or chat generation settings. Their results contain
+ordered probabilities and the verified artifact identity. Native models use
+`POST /api/deployed-models/{id}/inference/` and poll
+`GET /api/inference-requests/{id}/`; they do not support chat completions or chat
+capability activation. Preserve explicit `max_tokens` for chat;
 omission uses the production default. Report finish reason and truncation.
 An oversized context request needs a deliberate input/budget change, not silent
 clipping. A test may incur inference spend.

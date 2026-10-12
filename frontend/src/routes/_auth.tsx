@@ -6,7 +6,6 @@ import { createFileRoute, Link, Navigate, Outlet, useRouterState } from "@tansta
 import apiClient from "@/client";
 import { OutOfCreditsDialog } from "@/components/billing/out-of-credits-dialog";
 import { BreadcrumbSwitcher } from "@/components/breadcrumb-switcher";
-import { DatasetProcessDetails } from "@/components/datasets/notebook/pipeline-runs";
 import { WorkshopSidebar } from "@/components/datasets/workshop-sidebar";
 import { CreateAccountDialog } from "@/components/guest/create-account-dialog";
 import { HeaderCredits } from "@/components/header-credits";
@@ -60,13 +59,20 @@ function detectDynamicResource(segments: string[]): {
   slug: string;
   slugIdx: number;
 } | null {
+  if (segments[0] === "evaluations" && segments[1] === "runs" && segments[2]) {
+    return { kind: "evaluations", slug: segments[2], slugIdx: 2 };
+  }
   if (segments.length >= 2 && DYNAMIC_PARENTS.has(segments[0])) {
     return { kind: segments[0], slug: segments[1], slugIdx: 1 };
   }
   return null;
 }
 
-function useCachedName(kind: string | undefined, slug: string | undefined): string | undefined {
+function useCachedName(
+  kind: string | undefined,
+  slug: string | undefined,
+  evaluationFormat: string | undefined
+): string | undefined {
   const capabilityNameQuery = useQuery({
     enabled: kind === "capabilities" && !!slug,
     queryFn: () => apiClient.capabilities.capabilitiesRetrieve({ id: slug ?? "" }),
@@ -96,6 +102,27 @@ function useCachedName(kind: string | undefined, slug: string | undefined): stri
     select: (experiment) => `${experiment.capabilityName || "Run"} · ${experiment.id.slice(0, 8)}`,
   });
 
+  const evaluationNameQuery = useQuery({
+    enabled: kind === "evaluations" && evaluationFormat !== "decision" && !!slug,
+    queryFn: () => apiClient.evalRuns.evalRunsRetrieve({ id: slug ?? "" }),
+    queryKey: ["eval-run", slug],
+    select: (run) => run.name?.trim(),
+  });
+
+  const decisionEvaluationNameQuery = useQuery({
+    enabled: kind === "evaluations" && evaluationFormat === "decision" && !!slug,
+    queryFn: () => apiClient.nativeEvaluations.nativeEvaluationsRetrieve({ id: slug ?? "" }),
+    queryKey: ["decision-comparison", slug],
+    select: (plan) => plan.name?.trim(),
+  });
+
+  if (kind === "evaluations") {
+    return (
+      (evaluationFormat === "decision"
+        ? decisionEvaluationNameQuery.data
+        : evaluationNameQuery.data) || "Evaluation run"
+    );
+  }
   if (kind === "capabilities") return capabilityNameQuery.data;
   if (kind === "projects") return projectNameQuery.data;
   if (kind === "datasets") return datasetNameQuery.data;
@@ -127,6 +154,7 @@ function useBreadcrumbs(): BreadcrumbInfo {
   const { location } = useRouterState();
   const { pathname } = location;
   const search = location.search as {
+    format?: string;
     groupId?: string;
     jobId?: string;
     projectId?: string;
@@ -135,7 +163,7 @@ function useBreadcrumbs(): BreadcrumbInfo {
   const segments = pathname.split("/").filter(Boolean);
 
   const dynamic = detectDynamicResource(segments);
-  const cachedName = useCachedName(dynamic?.kind, dynamic?.slug);
+  const cachedName = useCachedName(dynamic?.kind, dynamic?.slug, search.format);
 
   const ftGroupId = pathname === "/training" ? search.groupId : undefined;
   const ftMonitorLabel = useTrainingMonitorCrumb(ftGroupId, search.jobId);
@@ -277,9 +305,6 @@ function Breadcrumb() {
             );
           })}
         </nav>
-        {leaf?.kind === "datasets" && (
-          <DatasetProcessDetails datasetId={leaf.slug} key={leaf.slug} />
-        )}
       </div>
       <HeaderActions hideProjects={crumbs[1]?.path === "/projects"} />
     </>

@@ -60,9 +60,7 @@ body {
   @apply m-0;
 }
 
-/* Deliberately no `h1–h4 { font-family: display }` rule: tying the face to the
-   tag put PP Mondwest on ~30 small UI headings by accident. The display face is
-   opt-in through the title ramp (named in lib/typography.ts). */
+/* PP Mondwest is restricted to .page-title; heading tags inherit Geist Pixel. */
 
 code {
   font-family: var(--font-mono);
@@ -117,17 +115,12 @@ code {
     letter-spacing: var(--tracking-cell);
   }
 
-  /* Weight is NOT a hierarchy lever: all four steps share it, so size and the
-     face are the only things separating a page title from a card title
-     (`check:design` forbids a per-call-site weight utility). 700 is synthesised
-     — PP Mondwest ships a Regular master only. */
   .title-hero,
-  .page-title,
   .title-section,
   .title-card {
-    font-family: var(--font-display);
-    font-weight: 700;
-    letter-spacing: -0.015em;
+    font-family: var(--font-sans);
+    font-weight: 400;
+    letter-spacing: normal;
   }
 
   .title-hero {
@@ -136,8 +129,11 @@ code {
   }
 
   .page-title {
+    font-family: var(--font-display);
     font-size: 1.8225rem;
+    font-weight: 700;
     line-height: 2.025rem;
+    letter-spacing: -0.015em;
   }
 
   .title-section {

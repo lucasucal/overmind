@@ -2,7 +2,7 @@ import * as z from "zod";
 
 import {
   DeployedModelsListStatusEnum,
-  EvalRunsListStatusEnum,
+  EvalRunsActivityListStatusEnum,
   FinetuningJobsListStatusEnum,
 } from "@/openapi";
 
@@ -103,17 +103,12 @@ export const evaluationsSearchSchema = projectIdSearchSchema.extend({
   page_size: z.coerce.number().min(5).max(100).optional().default(25),
   ...runFilterShape,
   run_dataset: z.string().optional().default("all"),
-  // Narrower than the shared shape: this list forwards the status to the API,
-  // so it must be one `EvalRun.Status` accepts — not the generic Job statuses,
-  // whose `partially_completed` the eval-runs endpoint rejects with a 400.
-  // `.catch` keeps a stale value from throwing a SearchParamError that would
-  // discard the rest of the search.
   run_status: z
-    .enum(["all", ...Object.values(EvalRunsListStatusEnum)])
+    .enum(["all", ...Object.values(EvalRunsActivityListStatusEnum)])
     .optional()
     .default("all")
     .catch("all"),
-  view: z.enum(["runs", "sets", "library", "decisions"]).optional().default("runs"),
+  view: z.enum(["runs", "sets", "library"]).optional().default("runs").catch("runs"),
 });
 
 export type EvaluationsSearch = z.infer<typeof evaluationsSearchSchema>;
@@ -209,3 +204,7 @@ export const projectsSearchSchema = z.object({
 });
 
 export type ProjectsSearch = z.infer<typeof projectsSearchSchema>;
+
+export const evaluationRunSearchSchema = projectIdSearchSchema.extend({
+  format: z.enum(["generative", "decision"]).optional(),
+});

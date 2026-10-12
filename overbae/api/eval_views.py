@@ -44,6 +44,11 @@ from overbae.api.eval_serializers import (
     ScoreSerializer,
     VerdictSerializer,
 )
+from overbae.api.evaluation_activity import (
+    EvaluationActivityDatasetSerializer,
+    EvaluationActivityQuerySerializer,
+    EvaluationActivitySerializer,
+)
 from overbae.api.filters import (
     EvalRunFilter,
     EvalSampleFilter,
@@ -51,6 +56,7 @@ from overbae.api.filters import (
     ScoreFilter,
     VerdictFilter,
 )
+from overbae.api.scoping import project_ids_for
 from overbae.api.serializers import ModelCatalogResponseSerializer
 from overbae.api.views import _user_project_ids
 from overbae.core.model_registry import model_defaults
@@ -63,6 +69,11 @@ from overbae.models import (
     Evaluator,
     Score,
     Verdict,
+)
+from overbae.services.evaluation_activity import (
+    activity_datasets,
+    activity_records,
+    evaluation_activity,
 )
 from overbae.services.model_catalog import fetch_model_catalog
 
@@ -666,6 +677,40 @@ class EvalRunViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "description"]
     ordering_fields = ["created_at", "completed_at", "name", "status"]
     lookup_field = "id"
+
+    @extend_schema(
+        summary="List generated-response and probability evaluations",
+        parameters=[EvaluationActivityQuerySerializer],
+        responses=EvaluationActivitySerializer(many=True),
+    )
+    @action(detail=False, methods=["get"], filter_backends=[])
+    def activity(self, request):
+        query = EvaluationActivityQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        rows = evaluation_activity(
+            project_ids_for(request.user, request.auth), query.validated_data
+        )
+        page = self.paginate_queryset(rows)
+        serializer = EvaluationActivitySerializer(activity_records(page), many=True)
+        return self.get_paginated_response(serializer.data)
+
+    @extend_schema(
+        summary="List datasets used by either evaluation format",
+        parameters=[EvaluationActivityQuerySerializer],
+        responses=EvaluationActivityDatasetSerializer(many=True),
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="activity-datasets",
+        filter_backends=[],
+        pagination_class=None,
+    )
+    def activity_datasets(self, request):
+        query = EvaluationActivityQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        rows = activity_datasets(project_ids_for(request.user, request.auth), query.validated_data)
+        return Response(EvaluationActivityDatasetSerializer(rows, many=True).data)
 
     @extend_schema(
         summary="Estimate evaluation context requirements without launching",

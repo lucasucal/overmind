@@ -130,6 +130,9 @@ export function JobsHistory({
     ft_status: statusFilter,
   } = filters;
   // Local so typing doesn't write a URL entry per keystroke.
+  const [ordering, setOrdering] = useState<
+    import("@/openapi").FinetuningJobsRunsListOrderingEnum | undefined
+  >();
   const [search, setSearch] = useState(searchParam);
   const debouncedSearch = useDebouncedValue(search, 400);
 
@@ -140,6 +143,7 @@ export function JobsHistory({
   const { data, isLoading, error, refetch, isRefetching } = useFinetuningRunsQuery({
     baseModel: modelFilter !== "all" ? modelFilter : undefined,
     dataset: datasetFilter !== "all" ? datasetFilter : undefined,
+    ordering,
     page,
     pageSize,
     projectId,
@@ -202,8 +206,6 @@ export function JobsHistory({
     });
   };
 
-  // No `meta.orderingField`: the endpoint accepts `?ordering=` but always
-  // returns runs newest-first, so a sortable header would do nothing.
   const columns: ColumnDef<FinetuningJobRun>[] = [
     {
       cell: ({ row }) => {
@@ -220,7 +222,7 @@ export function JobsHistory({
       },
       header: "Status",
       id: "status",
-      meta: { noTruncate: true },
+      meta: { noTruncate: true, orderingField: "status" },
       minSize: 140,
       size: 160,
     },
@@ -241,7 +243,7 @@ export function JobsHistory({
       },
       header: "Run",
       id: "run",
-      meta: { noTruncate: true },
+      meta: { noTruncate: true, orderingField: "name" },
       minSize: 160,
       size: 240,
     },
@@ -249,7 +251,7 @@ export function JobsHistory({
       cell: ({ row }) => <HistoryModelsCell jobs={row.original.jobs} />,
       header: "Models",
       id: "models",
-      meta: { noTruncate: true },
+      meta: { noTruncate: true, orderingField: "models" },
       minSize: 180,
       size: 240,
     },
@@ -267,7 +269,7 @@ export function JobsHistory({
       },
       header: "Dataset",
       id: "dataset",
-      meta: { noTruncate: true },
+      meta: { noTruncate: true, orderingField: "dataset" },
       minSize: 120,
       size: 144,
     },
@@ -285,6 +287,7 @@ export function JobsHistory({
       },
       header: "Duration",
       id: "duration",
+      meta: { orderingField: "duration" },
       minSize: 90,
       size: 110,
     },
@@ -299,6 +302,7 @@ export function JobsHistory({
       },
       header: "Credits",
       id: "credits",
+      meta: { orderingField: "credits" },
       minSize: 90,
       size: 110,
     },
@@ -316,6 +320,7 @@ export function JobsHistory({
       },
       header: "Started",
       id: "started",
+      meta: { orderingField: "created_at" },
       minSize: 120,
       size: 140,
     },
@@ -458,12 +463,17 @@ export function JobsHistory({
       hasActiveFilters={hasActiveFilters}
       isLoading={isLoading}
       onClearFilters={clearFilters}
+      onOrderingChange={(next) => {
+        setOrdering(next as import("@/openapi").FinetuningJobsRunsListOrderingEnum | undefined);
+        onSearchChange({ page: 1 });
+      }}
       onPageChange={(p) => onSearchChange({ page: p })}
       onPageSizeChange={(s) => onSearchChange({ page: 1, page_size: s })}
       onRowClick={onMonitorRun}
       onRowMouseEnter={(run) => {
         for (const key of finetuningUnseenKeys(run.jobs)) clearUnseenCompletion(key);
       }}
+      ordering={ordering}
       page={page}
       pageSize={pageSize}
       rowClassName={(run) =>

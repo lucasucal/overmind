@@ -43,8 +43,7 @@ describe("ScoreDistributions", () => {
       <ScoreDistributions metrics={["a-test", "b-test"]} scores={spread} variants={variants} />
     );
     fireEvent.click(getByRole("button", { name: "Distribution" }));
-    // One fill + one stroke path per series; `.border-b` scopes past toolbar icons.
-    expect(container.querySelectorAll("svg.border-b path").length).toBe(4);
+    expect(container.querySelectorAll('svg[data-slot="score-plot"] path').length).toBe(4);
   });
 
   it("shows identical all-100% series as one thick tick per lane in Box & Whisker", () => {
@@ -56,7 +55,9 @@ describe("ScoreDistributions", () => {
     );
     fireEvent.click(getByRole("button", { name: "Box & Whisker" }));
     // Zero-variance series render a thick tick, not a zero-width box.
-    expect(container.querySelectorAll('svg.border-b line[stroke-width="5"]').length).toBe(2);
+    expect(
+      container.querySelectorAll('svg[data-slot="score-plot"] line[stroke-width="5"]').length
+    ).toBe(2);
   });
 
   it("renders nothing without per-sample scores", () => {

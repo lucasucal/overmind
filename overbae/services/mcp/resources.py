@@ -1021,6 +1021,8 @@ def _deployment_resource(project, value: str, uri: str) -> dict:
         "kind": "deployment",
         "id": str(deployment.id),
         "model_id": deployment.model_id,
+        "inference_contract": deployment.inference_contract,
+        "serving_runtime": deployment.serving_runtime,
         "status": deployment.status,
         "progress": deployment_progress(deployment),
         "worker": worker_status(deployment),

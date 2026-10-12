@@ -259,7 +259,7 @@ export const tracesColumns: ColumnDef<TraceRow>[] = [
     cell: ({ row }) => <TraceSourceChip source={row.original.source ?? "overmind"} />,
     header: "Source",
     id: "source",
-    meta: { label: "Source" },
+    meta: { label: "Source", orderingField: "source" },
     size: 120,
   },
   {

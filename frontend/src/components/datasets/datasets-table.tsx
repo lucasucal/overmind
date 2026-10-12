@@ -136,10 +136,12 @@ export function DatasetsToolbar({
   );
 }
 
-type SortKey = "name" | "intent" | "rows" | "version" | "capability" | "updated";
+type SortKey = "source" | "name" | "intent" | "rows" | "version" | "capability" | "updated";
 
 const sortValue = (ds: Dataset, key: SortKey): string | number => {
   switch (key) {
+    case "source":
+      return SOURCE_KIND_LABEL[ds.sourceKind] ?? ds.sourceKind;
     case "name":
       return datasetDisplayName(ds).toLowerCase();
     case "intent":
@@ -224,7 +226,7 @@ function getColumns(opts: {
       ),
       header: "Source",
       id: "source",
-      meta: { label: "Source" },
+      meta: { label: "Source", orderingField: "source" },
       minSize: 80,
       size: 100,
     },

@@ -18,9 +18,11 @@ import type {
   EvalRun,
   EvalRunRequest,
   EvalRunsDatasetsRetrieve200ResponseInner,
+  EvaluationActivityDataset,
   EvaluationContextReport,
   EvaluationContextRequestRequest,
   PaginatedEvalRunListList,
+  PaginatedEvaluationActivityList,
   PatchedEvalRunRequest,
 } from '../models/index';
 import {
@@ -30,15 +32,39 @@ import {
     EvalRunRequestToJSON,
     EvalRunsDatasetsRetrieve200ResponseInnerFromJSON,
     EvalRunsDatasetsRetrieve200ResponseInnerToJSON,
+    EvaluationActivityDatasetFromJSON,
+    EvaluationActivityDatasetToJSON,
     EvaluationContextReportFromJSON,
     EvaluationContextReportToJSON,
     EvaluationContextRequestRequestFromJSON,
     EvaluationContextRequestRequestToJSON,
     PaginatedEvalRunListListFromJSON,
     PaginatedEvalRunListListToJSON,
+    PaginatedEvaluationActivityListFromJSON,
+    PaginatedEvaluationActivityListToJSON,
     PatchedEvalRunRequestFromJSON,
     PatchedEvalRunRequestToJSON,
 } from '../models/index';
+
+export interface EvalRunsActivityDatasetsListRequest {
+    project: string;
+    capability?: string;
+    dataset?: string;
+    ordering?: EvalRunsActivityDatasetsListOrderingEnum;
+    search?: string;
+    status?: EvalRunsActivityDatasetsListStatusEnum;
+}
+
+export interface EvalRunsActivityListRequest {
+    project: string;
+    capability?: string;
+    dataset?: string;
+    ordering?: EvalRunsActivityListOrderingEnum;
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    status?: EvalRunsActivityListStatusEnum;
+}
 
 export interface EvalRunsCancelCreateRequest {
     id: string;
@@ -100,6 +126,174 @@ export interface EvalRunsUpdateRequest {
  *
  */
 export class EvalRunsApi extends runtime.BaseAPI {
+
+    /**
+     * List datasets used by either evaluation format
+     */
+    async evalRunsActivityDatasetsListRaw(requestParameters: EvalRunsActivityDatasetsListRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<Array<EvaluationActivityDataset>>> {
+        if (requestParameters['project'] == null) {
+            throw new runtime.RequiredError(
+                'project',
+                'Required parameter "project" was null or undefined when calling evalRunsActivityDatasetsList().'
+            );
+        }
+
+        const queryParameters: any = {};
+
+        if (requestParameters['capability'] != null) {
+            queryParameters['capability'] = requestParameters['capability'];
+        }
+
+        if (requestParameters['dataset'] != null) {
+            queryParameters['dataset'] = requestParameters['dataset'];
+        }
+
+        if (requestParameters['ordering'] != null) {
+            queryParameters['ordering'] = requestParameters['ordering'];
+        }
+
+        if (requestParameters['project'] != null) {
+            queryParameters['project'] = requestParameters['project'];
+        }
+
+        if (requestParameters['search'] != null) {
+            queryParameters['search'] = requestParameters['search'];
+        }
+
+        if (requestParameters['status'] != null) {
+            queryParameters['status'] = requestParameters['status'];
+        }
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("ClerkBearerAuth", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+        if (this.configuration && this.configuration.apiKey) {
+            headerParameters["X-Api-Key"] = await this.configuration.apiKey("X-Api-Key"); // ApiKeyAuth authentication
+        }
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("BearerAuth", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/api/eval-runs/activity-datasets/`;
+
+        const response = await this.request({
+            path: urlPath,
+            method: 'GET',
+            headers: headerParameters,
+            query: queryParameters,
+        }, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) => jsonValue.map(EvaluationActivityDatasetFromJSON));
+    }
+
+    /**
+     * List datasets used by either evaluation format
+     */
+    async evalRunsActivityDatasetsList(requestParameters: EvalRunsActivityDatasetsListRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<Array<EvaluationActivityDataset>> {
+        const response = await this.evalRunsActivityDatasetsListRaw(requestParameters, initOverrides);
+        return await response.value();
+    }
+
+    /**
+     * List generated-response and probability evaluations
+     */
+    async evalRunsActivityListRaw(requestParameters: EvalRunsActivityListRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<PaginatedEvaluationActivityList>> {
+        if (requestParameters['project'] == null) {
+            throw new runtime.RequiredError(
+                'project',
+                'Required parameter "project" was null or undefined when calling evalRunsActivityList().'
+            );
+        }
+
+        const queryParameters: any = {};
+
+        if (requestParameters['capability'] != null) {
+            queryParameters['capability'] = requestParameters['capability'];
+        }
+
+        if (requestParameters['dataset'] != null) {
+            queryParameters['dataset'] = requestParameters['dataset'];
+        }
+
+        if (requestParameters['ordering'] != null) {
+            queryParameters['ordering'] = requestParameters['ordering'];
+        }
+
+        if (requestParameters['page'] != null) {
+            queryParameters['page'] = requestParameters['page'];
+        }
+
+        if (requestParameters['pageSize'] != null) {
+            queryParameters['page_size'] = requestParameters['pageSize'];
+        }
+
+        if (requestParameters['project'] != null) {
+            queryParameters['project'] = requestParameters['project'];
+        }
+
+        if (requestParameters['search'] != null) {
+            queryParameters['search'] = requestParameters['search'];
+        }
+
+        if (requestParameters['status'] != null) {
+            queryParameters['status'] = requestParameters['status'];
+        }
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("ClerkBearerAuth", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+        if (this.configuration && this.configuration.apiKey) {
+            headerParameters["X-Api-Key"] = await this.configuration.apiKey("X-Api-Key"); // ApiKeyAuth authentication
+        }
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("BearerAuth", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/api/eval-runs/activity/`;
+
+        const response = await this.request({
+            path: urlPath,
+            method: 'GET',
+            headers: headerParameters,
+            query: queryParameters,
+        }, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) => PaginatedEvaluationActivityListFromJSON(jsonValue));
+    }
+
+    /**
+     * List generated-response and probability evaluations
+     */
+    async evalRunsActivityList(requestParameters: EvalRunsActivityListRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<PaginatedEvaluationActivityList> {
+        const response = await this.evalRunsActivityListRaw(requestParameters, initOverrides);
+        return await response.value();
+    }
 
     /**
      * Cancel a run
@@ -772,6 +966,82 @@ export class EvalRunsApi extends runtime.BaseAPI {
 
 }
 
+/**
+ * @export
+ */
+export const EvalRunsActivityDatasetsListOrderingEnum = {
+    name: 'name',
+    name2: '-name',
+    status: 'status',
+    status2: '-status',
+    created_at: 'created_at',
+    created_at2: '-created_at',
+    capability_name: 'capability_name',
+    capability_name2: '-capability_name',
+    dataset_name: 'dataset_name',
+    dataset_name2: '-dataset_name',
+    variant_count: 'variant_count',
+    variant_count2: '-variant_count',
+    evaluator_count: 'evaluator_count',
+    evaluator_count2: '-evaluator_count'
+} as const;
+export type EvalRunsActivityDatasetsListOrderingEnum = typeof EvalRunsActivityDatasetsListOrderingEnum[keyof typeof EvalRunsActivityDatasetsListOrderingEnum];
+/**
+ * @export
+ */
+export const EvalRunsActivityDatasetsListStatusEnum = {
+    pending: 'pending',
+    running: 'running',
+    completed: 'completed',
+    failed: 'failed',
+    cancelled: 'cancelled',
+    draft: 'draft',
+    preparing: 'preparing',
+    prepared: 'prepared',
+    queued: 'queued',
+    waiting_for_checkpoint: 'waiting_for_checkpoint',
+    paused: 'paused',
+    submission_unknown: 'submission_unknown'
+} as const;
+export type EvalRunsActivityDatasetsListStatusEnum = typeof EvalRunsActivityDatasetsListStatusEnum[keyof typeof EvalRunsActivityDatasetsListStatusEnum];
+/**
+ * @export
+ */
+export const EvalRunsActivityListOrderingEnum = {
+    name: 'name',
+    name2: '-name',
+    status: 'status',
+    status2: '-status',
+    created_at: 'created_at',
+    created_at2: '-created_at',
+    capability_name: 'capability_name',
+    capability_name2: '-capability_name',
+    dataset_name: 'dataset_name',
+    dataset_name2: '-dataset_name',
+    variant_count: 'variant_count',
+    variant_count2: '-variant_count',
+    evaluator_count: 'evaluator_count',
+    evaluator_count2: '-evaluator_count'
+} as const;
+export type EvalRunsActivityListOrderingEnum = typeof EvalRunsActivityListOrderingEnum[keyof typeof EvalRunsActivityListOrderingEnum];
+/**
+ * @export
+ */
+export const EvalRunsActivityListStatusEnum = {
+    pending: 'pending',
+    running: 'running',
+    completed: 'completed',
+    failed: 'failed',
+    cancelled: 'cancelled',
+    draft: 'draft',
+    preparing: 'preparing',
+    prepared: 'prepared',
+    queued: 'queued',
+    waiting_for_checkpoint: 'waiting_for_checkpoint',
+    paused: 'paused',
+    submission_unknown: 'submission_unknown'
+} as const;
+export type EvalRunsActivityListStatusEnum = typeof EvalRunsActivityListStatusEnum[keyof typeof EvalRunsActivityListStatusEnum];
 /**
  * @export
  */

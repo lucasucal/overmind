@@ -48,30 +48,30 @@ def get_recommendation(
         capability = Capability.objects.get(pk=capability_id, project_id=dataset.project_id)
 
     stats = dataset_stats(dataset, cell)
-    if dataset_objective(cell or dataset.active_cell) in DECISION_OBJECTIVES:
+    native = dataset_objective(cell or dataset.active_cell) in DECISION_OBJECTIVES
+    if capability is not None:
+        task_type = classify_capability_task(capability)
+        source = "capability" if task_type != "unknown" else "unknown"
+    else:
+        task_type, source = _resolve_task_type(dataset, stats, native=native)
+    capability_context = collect_capability_context(capability) if capability is not None else None
+    if native:
         return {
-            "task_type": "decision",
-            "task_type_source": "declared_contract",
+            "task_type": task_type,
+            "task_type_source": source,
             "dataset": dataset_summary(stats),
             "candidates": [],
             "excluded": [],
             "shown": [],
             "skill_weights": {},
             "benchmark_snapshot": {"generated_at": None},
-            "capability_context": None,
+            "capability_context": capability_context,
         }
-    if capability is not None:
-        task_type = classify_capability_task(capability)
-        source = "capability" if task_type != "unknown" else "unknown"
-    else:
-        task_type, source = _resolve_task_type(dataset, stats)
     analysis = build_analysis(
         stats,
         task_type=task_type,
         task_type_source=source,
-        capability_context=collect_capability_context(capability)
-        if capability is not None
-        else None,
+        capability_context=capability_context,
     )
     if eval_dataset_id:
         evaluation = Dataset.objects.get(pk=eval_dataset_id, project_id=dataset.project_id)
@@ -240,7 +240,7 @@ def recommend_hyperparams_for_model(
     return build_candidate(stats, model_entry=entry, tier=tier)
 
 
-def _resolve_task_type(dataset, stats: dict[str, Any]) -> tuple[str, str]:
+def _resolve_task_type(dataset, stats: dict[str, Any], *, native: bool = False) -> tuple[str, str]:
     """The dataset's task type and where it came from.
 
     A dataset that went straight to the wizard has no context, so it is classified inline
@@ -252,9 +252,14 @@ def _resolve_task_type(dataset, stats: dict[str, Any]) -> tuple[str, str]:
     from overbae.services.eval.context_extractor import enqueue_refresh  # noqa: PLC0415
 
     context = DatasetContext.objects.filter(dataset=dataset).first()
+    # Chat-output shape cannot establish the semantic task of typed decision rows.
+    if native and (context is None or context.task_type_source != "semantic"):
+        return "unknown", "unknown"
     if context is not None:
         if context.task_type in set(TaskType.values):
             return context.task_type, context.task_type_source or "heuristic"
+        if native:
+            return "unknown", "unknown"
         profile = context.profile or {}
         if not _carries_classifier_inputs(profile):
             profile = _profile(dataset)

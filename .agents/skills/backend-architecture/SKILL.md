@@ -397,6 +397,12 @@ even if the dataset has a capability mapping. An unclassifiable selected capabil
 unknown and ungraded; it does not fall back to the dataset. Console and MCP readiness use
 the same recommendation service; an uncached capability classification may call an LLM.
 
+Training mode is separate from task type. Native decision recommendations use the
+selected capability or an existing semantic dataset classification; chat-output
+heuristics cannot establish their task. Missing classification stays unknown. Native
+model eligibility follows the validated decision format, independently of the task
+label; chat benchmark grades remain unavailable for native probability training.
+
 - Serving splits by finetune shape in `deployment.serves_as_adapter`. A dense or explicitly supported MoE Modal-trained LoRA is served as an adapter on a shared BF16 base — `publish_adapter` copies the adapter, and every deployment on that base shares one container pool, so a second adapter deploys in seconds. Everything else (full finetunes, unsupported MoE, non-Modal providers) is merged and quantized into a private checkpoint. The shared base must stay BF16: an FP8 base measurably degrades adapter quality. MoE models (`"moe": true`) require verified `inference.lora_supported` in `models.json`. Qwen3-Coder uses native mixed-format MoE LoRA with the fused expert format declared at adapter load; weights remain separate from the BF16 base. Shared workers resolve the family from the sealed base manifest. `inference.min_vram_gb` enforces measured GPU capacity floors; Gemma 4 E2B and E4B require at least L40S. A deployment whose stored GPU is below that floor is raised before the next boot.
 - Base weights live in exactly one place: `.base_models/{org--model}` on the weights Volume. `fetch_base_model` is the only writer and a global mutex (`max_containers=1`), so concurrent callers cannot corrupt a shared dir or download twice. Celery waits on that Function (`.remote()`) before spawning a GPU train job, so a cold base downloads on CPU. Training then loads `BASE_MODEL_PATH` and fails if the snapshot is incomplete — no Hub fallback, no AWS for bases, no catalog prewarm.
 - Nothing on the `overmind-sft` Volume is read at serve time — GPU workers mount weights and vllm-cache, plus inference-artifacts for shared-base LoRA. `tasks/cleanup_modal.py` sweeps it daily, ages run dirs with no `FinetuningJob` row off the Volume's own mtimes, and drops `runs/{run_id}/final/` once the deploy has landed (a READY deployment means the serving copy is on the weights Volume and a confirmed S3 archive covers a rebuild). The same beat drops spent `/weights/.staging/{id}/` trees. `stage_modal_checkpoint` and `publish_adapter` fall back to `download_checkpoint_from_s3` when the checkpoint is absent — the one place an S3 round trip is allowed, never the first deploy. Both delete the job's staging dir as soon as the serving copy is written.
@@ -404,7 +410,35 @@ the same recommendation service; an uncached capability classification may call 
 - Restore refreshes the Volumes, validates identities, wakes weight allocations, streams 2 GiB shards in manifest order into native pinned buffers, copies into the original CUDA graph addresses, resets empty LoRA banks, then wakes KV memory and checks health. LoRA images pin Run:ai 0.16.1; one reader uses 16 native threads, eight Torch threads and an 8 GB buffer for bases up to 80 GB, otherwise 16 GB. The pin is required by the upstream allocation site. Snapshots contain no tenant adapters; adapters are attached after restore under the existing lock. Lifecycle failures are recorded and surfaced on the input, not raised from `enter` into an endless retry. Internal sleep/reload/adapter-control endpoints cannot be forwarded through public inference methods.
 - Full-checkpoint workers retain their non-snapshot startup and compile-cache persistence. Only those concrete classes own the normal post-snapshot startup hook: putting it on the common base causes Modal to run it alongside the LoRA restore hook. `pre_warm` still verifies a deployment before READY; for LoRA it also completes first-time artifact/snapshot preparation. `CUDAGRAPH_CAPTURE_SIZES` and GPU selection are unchanged. The Modal gateway and Django SSE write idle pings immediately and every 15s; Django non-stream completions wait up to 15s for a result before starting newline keepalives. Playground SSE retains its keepalive. The edge ALB drops idle connections after 60s. Early non-stream errors return 400/502; after a keepalive commits headers, Django aborts an incomplete JSON response so clients raise a transport error. SSE failures use an error frame. Requests carry X-Request-ID, and failures and end-to-end timing are recorded alongside engine timing. The Django client rejects upstream JSON errors and consumes SSE lines without byte-buffer accumulation. GPU scheduling remains outside the loader's control; no cold-start SLA is implied.
 
+### Native decision serving
+
+Training completion always enters the shared deployment controller, including
+native decision jobs. `DeployedModel.inference_contract` separates chat from typed
+probability serving. Native deployments pin `serving_runtime`, recorded training
+GPU/context and the verified artifact identity. The release-pinned
+`overmind-decision-serve-*` app copies the complete immutable adapter/head artifact
+to the weights Volume and loads it through the same decision encoder/readout.
+Workers never read the training Volume during inference. Publication checks the
+artifact and base identities; READY requires a successful probability prediction.
+There is no chat-gateway registration or implicit capability activation.
+
+REST `POST /api/deployed-models/{id}/inference/`, request polling and MCP
+`run_inference` share the durable inference-request service. Input-only decisions
+exclude targets and generation parameters; output retains original option order
+and artifact identity. Existing request keys recover receipts without another
+provider submission. `deploy_finetune` can backfill successful historical jobs;
+existing deployments are reused and failed/deleted deployments require explicit
+retry. Native comparisons remain independent batch measurements.
+
 ### Native decision training
+
+`training_labels.prediction_labels` supplies `record.prediction_labels` to REST detail
+and the MCP finetune resource. It projects distinct questions, ordered options and
+declared score axes from the checksum-verified pinned cell, checking launch selection
+identity when recorded. The cache binds cell, fingerprint and file stat; full-source
+queries return at most eight complete label sets within 12 KB, with total coverage
+explicit. Missing or unreadable data stays unavailable; chat runs return null. This
+read path never invokes a model or derives labels from target argmax.
 
 A train cell may carry a `decision` object instead of assistant-bearing messages. `modal_shared/decisions.py` validates state, question, kind, runtime options, full target distributions and positive weights. The measured contract freezes the objective. The separately pinned `u2026_10_3_decision` image supplies Unsloth `FastDecisionModel`, `DecisionTrainer` and the Clef joint schema head; conversational training keeps its own runtime. `modal_shared/decision_encoding.py` maps the product request to upstream encoding, retains exact token/question/option spans and maps sorted choice and true/false outputs back to the requested option order. Targets never enter the encoder. Oversized inputs fail without truncation. Preparation fingerprints retain exact supervision and processor identity.
 
@@ -435,6 +469,20 @@ CPU preparation writes closed token shards, source offsets and checksums. A rest
 Matched native forecasts use completed execution duration for the same project, model, training/processor/data identities, hardware, recipe and approximate character-length profile. Native omitted packing matches the unpacked launch default; explicit step limits must match. A supplied native recipe epoch count takes precedence over the generic estimate default. Evidence and rejection reasons are returned. Workload scaling uses the same source-character estimate on both sides and is limited to 0.5–2x. One or two observations receive low confidence and an explicit 0.5–1.5 planning margin; three or more use 0.8–1.3. These are planning ranges, not statistical intervals. An unmeasured recipe reports unknown duration and total GPU cost, separately from the current GPU-hour rate. Forecasts expose price/duration status and estimate blockers, and multiply duration by the same fetched rate-card snapshot; historical charges are never reused as current rates. Native timing exposes elapsed time and a remaining-time range after five recent step intervals spanning 30 seconds. The range covers the elapsed-time average with a 0.8–1.3 planning margin and widens for observed step-time quantiles; it is not a confidence interval. It resets on attempt restart and is absent during final validation/reload. MCP and the monitor do not turn it into a single countdown or finish timestamp; the monitor rounds range endpoints outward to minutes. `compute_costs` prices worker usage receipts with workspace rates fetched from `modal.Workspace.billing.rates` (five-minute cache, eight-second timeout, no static-price fallback). Training, preparation, native evaluation and native performance report CPU/memory/GPU estimates separately from recorded ledger/API charges; cumulative worker observations are deduplicated and recorded training GPU is never added twice. CPU and peak-memory observations are proxies, not provider meters. Modal workers use process resource counters because cgroup mounts are unavailable. Reaped child CPU is included; live child usage is incomplete until exit, and summed process memory peaks can overestimate simultaneous use. Missing receipts/rates remain unknown, and image boot, later idle, storage, network, local orchestration and provider adjustments remain excluded. No all-in invoice or spending cap is claimed.
 
 Native comparison database results retain aggregate and per-benchmark metrics. Per-slice diagnostics remain in the complete downloadable report, whose checksum and byte count are stored in the scoring receipt. A paused comparison can explicitly resume an interrupted local `verify_inputs`, `fit_calibration` or `score` stage; the previous lease is fenced and saved inputs are reused without provider resubmission.
+
+`native_evaluation_monitor.py` maintains a local SQLite sample projection beside
+each sealed suite. The evaluation worker publishes immutable, checksum-bound
+chunks of flushed predictions and stage/count timestamps every ten seconds,
+under its exact provider call ID. The existing collector verifies call, runtime,
+input and artifact identities before ingestion. Repeated observations are
+idempotent; publication failure does not fail or replay inference. Preparation
+incompatibility, invalid outputs and missing results remain distinct. Scoring
+uses the existing decision metric contract with each metric's own denominator.
+Calibration is applied only after the calibration receipt is frozen.
+REST `native-evaluations/{id}/monitor` and MCP `inspect_native_evaluation` read
+bounded sample pages and recorded summaries, without provider reads. Missing
+historical indexes are built by `native_evaluation.refresh_monitor` on `batch`
+from retained predictions and their checksums, never a new inference run.
 
 ## Data-first model workflows
 

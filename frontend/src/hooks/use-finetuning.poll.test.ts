@@ -43,4 +43,10 @@ describe("finetuningJobsPollInterval", () => {
     expect(finetuningJobsPollInterval([{ status: "uploading" }])).toBe(5_000);
     expect(finetuningJobsPollInterval(undefined)).toBe(5_000);
   });
+
+  it("stops polling deleted evaluations without hiding unfinished training", () => {
+    const nativeEvaluation = { deletedAt: new Date(), state: "paused" };
+    expect(finetuningJobsPollInterval([{ nativeEvaluation, status: "succeeded" }])).toBe(false);
+    expect(finetuningJobsPollInterval([{ nativeEvaluation, status: "running" }])).toBe(5_000);
+  });
 });

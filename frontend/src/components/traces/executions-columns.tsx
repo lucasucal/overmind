@@ -40,7 +40,7 @@ export function buildExecutionsColumns(options: {
       },
       header: "Capability",
       id: "capability",
-      meta: { label: "Capability" },
+      meta: { label: "Capability", orderingField: "capability__name" },
       size: 180,
     },
     {
@@ -125,7 +125,7 @@ export function buildExecutionsColumns(options: {
       },
       header: "Tokens",
       id: "total_tokens",
-      meta: { label: "Tokens" },
+      meta: { label: "Tokens", orderingField: "total_tokens" },
       size: 104,
     },
     {
@@ -141,7 +141,7 @@ export function buildExecutionsColumns(options: {
       },
       header: "Cost",
       id: "total_cost",
-      meta: { label: "Cost" },
+      meta: { label: "Cost", orderingField: "total_cost" },
       size: 96,
     },
     {
@@ -155,7 +155,7 @@ export function buildExecutionsColumns(options: {
       },
       header: "Model",
       id: "model",
-      meta: { label: "Model" },
+      meta: { label: "Model", orderingField: "model" },
       size: 160,
     },
     {

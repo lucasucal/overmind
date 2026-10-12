@@ -13,16 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import { LoadingState } from "@/components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { useComparableEvalRunsQuery, useEvalRunComparisonQuery } from "@/hooks/use-evaluations";
+import { useTableSort } from "@/hooks/use-table-sort";
 import { type StatusTone, scoreChipClass, TONE_BADGE_VARIANT, TONE_CHIP } from "@/lib/colors";
 import { PROSE } from "@/lib/typography";
 import { cn, scorePct } from "@/lib/utils";
@@ -333,6 +328,9 @@ export function RunComparison({
     return { baseline: base, current: cur, ...classify(cur, base) };
   }, [currentSummary, baselineSummary]);
 
+  const { sort, onSort, sortRows } = useTableSort<
+    "name" | "current" | "baseline" | "delta" | "status"
+  >();
   const currentTrust = currentSummary ? runTrust(currentSummary) : null;
   const baselineTrust = baselineSummary ? runTrust(baselineSummary) : null;
   const naByEvaluator = useMemo(() => {
@@ -446,11 +444,29 @@ export function RunComparison({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Evaluator</TableHead>
-                <TableHead className="text-center">This run</TableHead>
-                <TableHead className="text-center">Compared</TableHead>
-                <TableHead className="text-center">Δ</TableHead>
-                <TableHead className="text-center">Change</TableHead>
+                <SortableHeader label="Evaluator" onSort={onSort} sort={sort} sortKey="name" />
+                <SortableHeader
+                  centered
+                  label="This run"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="current"
+                />
+                <SortableHeader
+                  centered
+                  label="Compared"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="baseline"
+                />
+                <SortableHeader centered label="Δ" onSort={onSort} sort={sort} sortKey="delta" />
+                <SortableHeader
+                  centered
+                  label="Change"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="status"
+                />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -471,7 +487,9 @@ export function RunComparison({
                   </TableCell>
                 </TableRow>
               )}
-              {rows.map((row) => {
+              {sortRows(rows, (row, key) =>
+                key === "current" || key === "baseline" ? primaryValue(row[key]) : row[key]
+              ).map((row) => {
                 const naCount = naByEvaluator.get(row.name) ?? 0;
                 return (
                   <TableRow key={row.name}>

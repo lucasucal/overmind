@@ -122,7 +122,7 @@ function ModelDetailPage() {
           ) : null}
           <ServingCard
             actions={
-              projectId ? (
+              projectId && model.inferenceContract !== "decision" ? (
                 <ModelLiveAction
                   capabilityId={model.capabilityId}
                   jobs={jobs}
@@ -168,6 +168,9 @@ function ModelDetailPage() {
                   {model.maxModelLen.toLocaleString()} tokens
                 </LineageField>
                 <LineageField label="GPU">{model.gpuType || "—"}</LineageField>
+                <LineageField label="Output">
+                  {model.inferenceContract === "decision" ? "Decision probabilities" : "Chat"}
+                </LineageField>
                 <LineageField label="Precision">{model.quantization || "—"}</LineageField>
                 <LineageField label="Deployed">
                   <DateTime value={model.deployedAt ?? model.createdAt} />
@@ -185,7 +188,8 @@ function ModelDetailPage() {
             </div>
           </Disclosure>
           <ApiSnippetDialog
-            capabilityId={model.capabilityId}
+            capabilityId={model.inferenceContract === "decision" ? null : model.capabilityId}
+            decisionDeploymentId={model.inferenceContract === "decision" ? model.id : undefined}
             modelId={model.modelId}
             onOpenChange={setSnippetOpen}
             open={snippetOpen}
@@ -236,12 +240,13 @@ function RedeployBanner({ model }: { model: DeployedModel }) {
 }
 
 function ServingCard({ model, actions }: { model: DeployedModel; actions?: React.ReactNode }) {
-  const reference = model.capabilityId ? `overmind/${model.capabilityId}` : model.modelId;
+  const alias = model.inferenceContract !== "decision" && model.capabilityId;
+  const reference = alias ? `overmind/${model.capabilityId}` : model.modelId;
   return (
     <Card className="flex flex-wrap items-start justify-between gap-4 p-4">
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>{model.capabilityId ? "Capability alias" : "Model ID"}</span>
+          <span>{alias ? "Capability alias" : "Model ID"}</span>
           {model.capabilityId ? (
             <CapabilityChip
               capabilityId={model.capabilityId}

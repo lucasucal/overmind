@@ -41,6 +41,7 @@ from overbae.api.eval_views import (
 )
 from overbae.api.guest import GuestClaimView, GuestStartView
 from overbae.api.health import health_check
+from overbae.api.inference_requests import DeploymentInferenceView, InferenceRequestView
 from overbae.api.mcp_oauth import MCPConsentView
 from overbae.api.native_evaluation import NativeEvaluationViewSet
 from overbae.api.optimizer import OptimizerCandidateViewSet, OptimizerExperimentViewSet
@@ -126,6 +127,16 @@ router.register(r"behaviours", BehaviourViewSet, basename="behaviour")
 router.register(r"task-executions", TaskExecutionViewSet, basename="taskexecution")
 
 urlpatterns = [
+    path(
+        "api/deployed-models/<uuid:deployment_id>/inference/",
+        DeploymentInferenceView.as_view(),
+        name="deployment-inference",
+    ),
+    path(
+        "api/inference-requests/<uuid:request_id>/",
+        InferenceRequestView.as_view(),
+        name="inference-request",
+    ),
     path("api/mcp-oauth/consent/", MCPConsentView.as_view(), name="mcp-oauth-consent"),
     path(settings.ADMIN_URL_PATH, admin.site.urls),
     path("health", health_check, name="health"),

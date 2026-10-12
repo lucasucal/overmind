@@ -151,8 +151,8 @@ navigation code but are no longer used to stage access.
   steps progress downward, sibling branches align side by side on the same layer,
   with elbow connections from recorded lineage. Zoom, Fit view and a toggleable
   minimap navigate the graph without changing cell dimensions; Reset and linked-cell
-  focus return to scale 1. The Process control shows the current execution facts. Corrections replace the displayed process; there is no repair-history or restore view. Recorded partition links keep train, development, calibration and final outputs connected to their source and scripts.
-  The left-hand box groups the minimap toggle with the folder button for project
+  focus return to scale 1. Corrections replace the displayed process; there is no repair-history or restore view. Recorded partition links keep train, development, calibration and final outputs connected to their source and scripts.
+  The right-hand box groups the minimap toggle with the folder button for project
   dataset navigation; cell search and the cell-selector strip are removed.
   Platform-agent chat and the prompt-style landing are removed.
 - The native coding agent owns planning, interpretation, transformation code,
@@ -210,8 +210,10 @@ navigation code but are no longer used to stage access.
   incumbent. They remain independent of development monitoring. Missing exact
   OpenRouter routes and invalid evaluator definitions are visible failures, not
   permission to substitute a model or silently launch hosted base inference.
-- Weights are merged, quantised, and deployed to a hosted endpoint; the swap
-  is offered as a copy-paste prompt for the coding agent.
+- Successful training automatically deploys each model through its matching
+  inference runtime. Chat models use shared BF16 adapters or private checkpoints;
+  decision models retain their verified adapter and full-precision probability
+  head. Deployment does not change application routing.
 - Training and serving run on **Modal** and **Baseten**. Nebius has been
   removed. The model catalogue (`/api/models/catalog/`) can disable specific
   models, and large models are currently disabled — a live constraint that
@@ -222,6 +224,10 @@ navigation code but are no longer used to stage access.
 - Inference is an OpenAI-compatible API (`/api/v1/chat/completions`,
   `/api/v1/models`, `/api/v1/models/<model_id>`) covering frontier models and
   deployed fine-tuned models.
+- Decision deployments accept input-only decisions at
+  `/api/deployed-models/{id}/inference/` and return a durable request receipt.
+  `/api/inference-requests/{id}/` exposes ordered probabilities and the exact
+  artifact identity. They are not chat-completion models.
 - Billing meters usage on an append-only credits ledger. **Remaining-credit
   caps, Free/Pro plans, Stripe Checkout and top-ups** inject only when
   `STRIPE_SECRET_KEY` is set (cloud). Without it (OSS) the Console still shows

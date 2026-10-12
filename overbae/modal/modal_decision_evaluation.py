@@ -18,6 +18,7 @@ from modal_shared.preparation import training_fingerprint
 from modal_shared.serving.artifacts import atomic_json, digest_file
 from modal_shared.stacks import TRAIN_DECISION
 from modal_shared.training_release import evaluation_identity
+from modal_shared.training_telemetry import read_telemetry
 
 RELEASE = (
     evaluation_identity(Path(__file__).resolve().parents[2])
@@ -147,6 +148,55 @@ def prediction_environment(directory, model, work, base_only, inference):
     return env
 
 
+def publish_progress(directory, label, work, report, cursor):
+    call_id = modal.current_function_call_id()
+    target = directory / "progress" / call_id
+    target.mkdir(parents=True, exist_ok=True)
+    result = directory / f"{label}.jsonl"
+    if result.exists():
+        with result.open("rb") as source:
+            source.seek(cursor["offset"])
+            # Only complete records are published; the subprocess flushes each microbatch.
+            while True:
+                block = bytearray()
+                count = 0
+                while len(block) < 1024 * 1024:
+                    line = source.readline()
+                    if not line.endswith(b"\n"):
+                        break
+                    block.extend(line)
+                    count += 1
+                if not block:
+                    break
+                path = target / f"{len(cursor['chunks'])}.jsonl"
+                path.write_bytes(block)
+                cursor["chunks"].append({"sha256": digest_file(path), "rows": count})
+                cursor["offset"] += len(block)
+                cursor["completed"] += count
+                cursor["last_progress_at"] = time.time()
+                source.seek(cursor["offset"])
+    telemetry = read_telemetry(work)
+    stage = "predicting" if cursor["completed"] else telemetry.get("stage", "initialising")
+    if cursor.get("stage") != stage:
+        cursor.update(stage=stage, last_progress_at=time.time())
+    atomic_json(
+        target / "manifest.json",
+        {
+            "call_id": call_id,
+            "artifact_identity": report["artifact_identity"],
+            "input_sha256": report["input_sha256"],
+            "runtime_fingerprint": cursor["runtime_fingerprint"],
+            "expected": report["ready_decisions"],
+            "completed": cursor["completed"],
+            "stage": stage,
+            "source_at": time.time(),
+            "last_progress_at": cursor.get("last_progress_at"),
+            "chunks": cursor["chunks"],
+        },
+    )
+    volume.commit()
+
+
 @app.function(
     image=image,
     gpu="H100",
@@ -166,15 +216,38 @@ def predict(evaluation_id, model_run, *, base_only=False, inference=None):
         work = Path(temporary)
         env = prediction_environment(directory, model, work, base_only, inference)
         env["DECISION_OUTPUT_PATH"] = str(result)
+        result.unlink(missing_ok=True)
         with (directory / f"{label}.log").open("a") as log:
-            subprocess.run(
+            process = subprocess.Popen(
                 [sys.executable, str(assets / "train.py")],
                 cwd=work,
                 env=env,
-                check=True,
                 stdout=log,
                 stderr=subprocess.STDOUT,
             )
+            cursor = {
+                "offset": 0,
+                "chunks": [],
+                "completed": 0,
+                "runtime_fingerprint": training_fingerprint(assets),
+            }
+            try:
+                while True:
+                    # Monitoring failure must not change or replay the prediction call.
+                    try:
+                        publish_progress(directory, label, work, report, cursor)
+                    except Exception as exc:
+                        print(f"Prediction progress publication unavailable: {type(exc).__name__}")
+                    code = process.poll()
+                    if code is not None:
+                        if code:
+                            raise subprocess.CalledProcessError(code, process.args)
+                        break
+                    time.sleep(10)
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=30)
     with result.open() as stream:
         count = sum(1 for _ in stream)
     if count != report["ready_decisions"]:

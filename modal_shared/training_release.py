@@ -41,3 +41,11 @@ def evaluation_identity(root):
     worker = root / "overbae/modal/modal_decision_evaluation.py"
     digest = hashlib.sha256((release["release"] + worker.read_text()).encode()).hexdigest()
     return {"app": "overmind-decision-eval-" + digest[:24], "release": digest}
+
+
+def serving_identity(root):
+    root = Path(root)
+    release = identity(root)
+    worker = root / "overbae/modal/modal_decision_serving.py"
+    digest = hashlib.sha256((release["release"] + worker.read_text()).encode()).hexdigest()
+    return {"app": "overmind-decision-serve-" + digest[:24], "release": digest}

@@ -2,10 +2,10 @@ import logging
 from collections import defaultdict
 
 from django.core.exceptions import ValidationError
-from django.db.models import Avg, Count, Max, Min, OuterRef, Q, Subquery, Sum
+from django.db.models import Count, Max, Min, OuterRef, Q, Subquery, Sum
 from django.db.models.expressions import RawSQL
-from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
+from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -13,7 +13,7 @@ from drf_spectacular.utils import (
     extend_schema_view,
     inline_serializer,
 )
-from rest_framework import mixins, status, viewsets
+from rest_framework import filters, mixins, status, viewsets
 from rest_framework import serializers as drf_serializers
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException, PermissionDenied
@@ -26,10 +26,12 @@ from overbae.api.filters import (
     SessionFilter,
     SpanFilter,
 )
+from overbae.api.finetuning_runs import FinetuningRunOrderingSerializer
 from overbae.api.native_evaluation import (
     NativeEvaluationRequestSerializer,
     NativeEvaluationSerializer,
 )
+from overbae.api.ordering import TableOrderingFilter
 from overbae.api.scoping import project_ids_for
 from overbae.api.serializers import (
     ConnectorCapabilityMappingResponseSerializer,
@@ -101,7 +103,6 @@ from overbae.models import (
     Feedback,
     FinetuningJob,
     FinetuningJobEvent,
-    InferenceCall,
     Project,
     ProjectInvite,
     ProjectMembership,
@@ -117,8 +118,9 @@ from overbae.services.finetuning_checkpoints import (
     CheckpointArchiveError,
     get_checkpoint_download_url,
 )
+from overbae.services.finetuning_runs import ordered_training_runs
 from overbae.services.inference_live import live_worker_stats
-from overbae.services.inference_metrics import model_activity, model_metrics, percentile
+from overbae.services.inference_metrics import Median, model_activity, model_metrics
 from overbae.services.training_cancellation import cancel as cancel_training
 from overbae.services.training_preparation import (
     live_progress_for_job,
@@ -395,6 +397,7 @@ class SpanViewSet(
     filterset_class = SpanFilter
     search_fields = ["name", "service_name", "trace_id", "span_id"]
     ordering_fields = [
+        "source",
         "start_time_ns",
         "end_time_ns",
         "duration_ns",
@@ -752,6 +755,8 @@ class FinetuningJobViewSet(viewsets.ModelViewSet):
             "eval_cell__dataset",
             "eval_set",
             "native_evaluation",
+            "native_evaluation__final_cell__dataset__capability",
+            "native_evaluation__calibration_cell__dataset__capability",
             "validation_cell__dataset",
             "triggered_by",
             "deployed_model",
@@ -782,7 +787,7 @@ class FinetuningJobViewSet(viewsets.ModelViewSet):
         FinetuningJob.objects.filter(pk=job.pk).update(celery_task_id=result.id)
 
     @extend_schema(
-        summary="List training runs — whole runs per page, newest first",
+        summary="List training runs — whole runs per page",
         description=(
             "The training history lists *runs*, not jobs: the wizard launches one "
             "job per experiment and stamps them with a shared `group_id`. Paging "
@@ -794,11 +799,12 @@ class FinetuningJobViewSet(viewsets.ModelViewSet):
             "entry per run — `{run_id, group_id, jobs}` — where `run_id` is the "
             "`group_id` when there is one and the lone job's id otherwise, and "
             "`jobs` is every job of that run so client-side aggregation is always "
-            "complete. Runs are ordered by their most recent job; `?ordering=` is "
-            "accepted for compatibility but does not reorder runs.\n\n"
+            "complete. Ordering applies to whole-run values before pagination. "
+            "By default, the most recently created job places its run first.\n\n"
             "Every filter of the jobs list applies (`project`, `capability`, `dataset`, "
             "`base_model`, `status`, `provider`, `group_id`, `search`)."
         ),
+        parameters=[FinetuningRunOrderingSerializer],
         responses={200: FinetuningJobRunSerializer(many=True)},
     )
     @action(detail=False, methods=["get"], url_path="runs")
@@ -814,17 +820,10 @@ class FinetuningJobViewSet(viewsets.ModelViewSet):
         endpoint exists to keep intact.
         """
         base = self.get_queryset()
-        # Distinct run keys, most-recently-active first. ``order_by()`` first:
-        # the model's default ``-created_at`` would otherwise join the GROUP BY
-        # and split every run into one row per job.
-        runs = (
-            self.filter_queryset(base)
-            .order_by()
-            .annotate(run_key=Coalesce("group_id", "id"))
-            .values("run_key")
-            .annotate(latest_at=Max("created_at"))
-            .order_by("-latest_at")
-        )
+        query = FinetuningRunOrderingSerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        ordering = query.validated_data.get("ordering")
+        runs = ordered_training_runs(base, self.filter_queryset(base), ordering)
         page = self.paginate_queryset(runs)
         run_keys = [row["run_key"] for row in (page if page is not None else runs)]
         # Refetched from the project-scoped base, NOT the filtered queryset, so a
@@ -1924,12 +1923,14 @@ class DeployedModelViewSet(
     viewsets.GenericViewSet,
 ):
     serializer_class = DeployedModelSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, TableOrderingFilter]
     filterset_class = DeployedModelFilter
     search_fields = ["model_id", "base_model_id", "finetuning_job__name"]
-    # ``avg_latency_ms`` / ``avg_tokens_per_second`` are deliberately absent: the
-    # SQL means they are annotated with are replaced by medians in ``list()``, so
-    # sorting on them would order the page by numbers it does not display.
     ordering_fields = [
+        "avg_latency_ms",
+        "avg_tokens_per_second",
+        "finetuning_job__name",
+        "finetuning_job__capability__name",
         "created_at",
         "status",
         "model_id",
@@ -1958,9 +1959,12 @@ class DeployedModelViewSet(
                 last_active_at=Max("inference_calls__created_at"),
                 total_tokens=Sum("inference_calls__prompt_tokens")
                 + Sum("inference_calls__completion_tokens"),
-                avg_tokens_per_second=Avg("inference_calls__tokens_per_second"),
+                avg_tokens_per_second=Median(
+                    "inference_calls__tokens_per_second",
+                    filter=Q(inference_calls__is_cold=False, inference_calls__outcome="succeeded"),
+                ),
                 # Warm calls only, to match the detail page's headline latency.
-                avg_latency_ms=Avg(
+                avg_latency_ms=Median(
                     "inference_calls__latency_ms",
                     filter=Q(inference_calls__is_cold=False, inference_calls__outcome="succeeded"),
                 ),
@@ -1972,38 +1976,6 @@ class DeployedModelViewSet(
             )
             .order_by("-created_at")
         )
-
-    def list(self, request, *args, **kwargs):
-        """Overlay robust (median) latency/throughput onto each row.
-
-        The queryset annotates SQL means for these two, but a few slow-client or
-        very-long-generation outliers skew a mean badly; the median is computed
-        per model in Python here so the table stays comparable across models
-        with very different baselines.
-        """
-        response = super().list(request, *args, **kwargs)
-        items = response.data.get("results") if isinstance(response.data, dict) else response.data
-        if not items:
-            return response
-        lat: dict = defaultdict(list)
-        tps: dict = defaultdict(list)
-        ids = [it["id"] for it in items]
-        for mid, latency, t in (
-            InferenceCall.objects.filter(
-                deployed_model_id__in=ids, is_cold=False, outcome="succeeded"
-            )
-            .order_by("-created_at")
-            .values_list("deployed_model_id", "latency_ms", "tokens_per_second")
-        ):
-            if latency is not None:
-                lat[str(mid)].append(latency)
-            if t is not None:
-                tps[str(mid)].append(t)
-        for it in items:
-            mid = str(it["id"])
-            it["avg_latency_ms"] = percentile(sorted(lat[mid]), 0.5)
-            it["avg_tokens_per_second"] = percentile(sorted(tps[mid]), 0.5)
-        return response
 
     def perform_destroy(self, instance):
         from overbae.services.inference_client import get_inference_client

@@ -5,7 +5,7 @@ description: Overmind Console design system — semantic tokens, shared primitiv
 
 # Frontend design conventions
 
-The Console is "a quiet workshop for agent improvement" — warm minimalism, copper/gold brand, NeueBit (pixel, display + labels) and PP Neue Montreal (body), small radii, flat surfaces. Keep it; don't drift toward default Tailwind.
+The Console is "a quiet workshop for agent improvement" — warm minimalism, copper/gold brand, Geist Pixel for body, card, section and popup text, PP Mondwest only for main page titles, and NeueBit for navigation, small radii, flat surfaces. Keep it; don't drift toward default Tailwind.
 
 The token spec is the root `DESIGN.md` — extend its values, don't restructure it. The Console is dark-only: palette values live on `:root` in `frontend/src/styles.css`, exposed under `@theme inline`. First paint, authentication, toasts and flow canvases stay dark regardless of stored or OS preferences. Do not add a theme selector, theme provider or preference listener.
 
@@ -42,7 +42,7 @@ Anything below `/60` is invisible. Never lower a border opacity without running 
 
 - **Flat surfaces** — standard `shadow-*` utilities remain disabled. Depth = surface layering + 1px borders. Shared confirmation dialogs alone use `shadow-confirmation`, a subtle palette-matched drop shadow requested by the user.
 - Radii: `rounded-sm` for interactive primitives, `rounded-md` for containers. `rounded-lg/xl/2xl/3xl` are off-system. The Workshop bezel uses the same `rounded-md` (3px) as other pages. Dataset navigation shares the outer bezel with the content; its 248px grid column starts collapsed and expands with the notebook's folder toggle, with a reduced-motion alternative. Rows are 28px on desktop and 36px on touch layouts, with no gaps between items. Mobile reveals the same navigation in the bezel while retaining the hidden notebook; it does not create a separate pane.
-- Headings use `font-display` (NeueBit, unweighted). `font-mono` is the loaded system stack — Fira Code is not shipped, don't reference it.
+- Main page titles use `TITLE.page` (PP Mondwest). Card, section, dialog, sheet and empty-state headings use their `TITLE` role in Geist Pixel. Never add Mondwest outside the main page title. `font-mono` also resolves to Geist Pixel; Fira Code is not shipped.
 - Icons: **always the central registry** — `import { Icon } from "@/components/ui/icons"` → `<Icon.name className="size-4" />`. The glyphs are pixelarticons paths vendored into `ui/icons/glyphs.ts` (24×24 grid, 2px inset, `currentColor`); never import that module or `lucide-react` in app code; both fail `check:design`. One concept = one glyph (`Icon.delete` = trash, `Icon.close`/`Icon.failed` = the "X"). Missing a glyph? Add `name: glyph("<svg-name>")` to `ui/icons/index.ts`, the only file that may read the table, then `bun run icons:vendor` with `PIXELARTICONS_LICENSE_KEY` set (or `--source <svg dir>` of an unlocked package) — typecheck fails until the table is regenerated. Removing one is the reverse. There is no icon package to install. Sizes: `size-4` in buttons, `size-[17px]` in nav, `size-3` for dense chips.
 
 ## Two duplicated table implementations
@@ -54,12 +54,10 @@ the same horizontal layer. Cells open full-width at scale 1. Preserve max-w-7xl
 and original notebook padding; explicit zoom and Fit view change only the camera.
 Reset and linked-cell focus restore scale 1; resizing preserves the chosen zoom.
 Reuse Agent trajectory controls and its toggleable, persisted minimap treatment.
-The minimap toggle shares the left-hand control box with the dataset sidebar
+The minimap toggle shares the right-hand control box with the dataset sidebar
 button; there is no cell-search button or cell-selector strip.
 Positions persist per project/dataset in the browser and never
-change execution. A breadcrumb-adjacent Process control shows the current run
-during execution and the selected successful process after publication. Canvas
-wrapper styles must not redesign cells or the rows grid. Corrections replace the
+change execution. Canvas wrapper styles must not redesign cells or the rows grid. Corrections replace the
 displayed process; there is no repair-history or restore view. Verified source,
 script, derivation and partition dependencies connect related datasets. Condition chips sit just above destination handles,
 with an opaque card surface and input-token border, not on the shared branch rail.
@@ -73,7 +71,9 @@ Sort headers are in `components/ui/sortable-header.tsx` for hand-built tables an
 
 Eval results align model variants by the generated client's `rowIndex`, including zero. Trace-filter samples use `sourceTraceId`; samples with neither keep their own identity. Use `components/evaluations/sample-index.ts` for table and detail lookups so unrelated outputs never collapse or stand in for another model's missing response.
 
-The eval datapoint popup selects one model at a time and shows its input beside its generated output, grading reference, and evaluator reasoning. `SampleInput` consumes the generated `EvalSampleIO` contract: captured initial runner requests include system prompts and tools; historical dataset inputs explicitly say the exact request was not captured. Never label a combined trajectory as input or an extracted statistical prediction as the model's full output.
+The generative eval datapoint popup selects one model at a time and shows its input beside its generated output, grading reference, and evaluator reasoning. `SampleInput` consumes the generated `EvalSampleIO` contract: captured initial runner requests include system prompts and tools; historical dataset inputs explicitly say the exact request was not captured. Never label a combined trajectory as input or an extracted statistical prediction as the model's full output.
+
+The native probability datapoint popup shows shared frozen input on the left and all models' outputs in a vertically scrolling list on the right, without model tabs or a selector. Each model keeps its own probabilities, references, scores and missing/error state. Narrow screens stack the input above the model list.
 
 Trajectory model-call cards use `ModelProviderChip` as their title and a three-line system-prompt preview that opens in a dialog. Mode-specific model/prompt context requires an exact step-anchor match; unbound or shared calls show only context common to their candidates. Never borrow a conflicting worker prompt. Excerpts stay labelled as excerpts; missing capture has no expand control.
 

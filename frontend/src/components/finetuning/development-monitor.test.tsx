@@ -25,7 +25,12 @@ function show() {
   render(
     <QueryClientProvider client={client}>
       <TooltipProvider>
-        <DevelopmentMonitor jobId="job" modelName="Qwen3 0.6B" status="cancelled" />
+        <DevelopmentMonitor
+          color="var(--chart-1)"
+          jobId="job"
+          modelName="Qwen3 0.6B"
+          status="cancelled"
+        />
       </TooltipProvider>
     </QueryClientProvider>
   );
@@ -75,10 +80,10 @@ it("renders a single recorded measurement including zero loss", async () => {
   );
 });
 
-it("leaves missing validation unmeasured", async () => {
+it("leaves missing development loss unmeasured", async () => {
   mocks.summary.mockResolvedValue({ checks: [], nextOffset: null });
   show();
-  expect(await screen.findByText("No validation loss recorded")).toBeTruthy();
+  expect(await screen.findByText("No development loss recorded")).toBeTruthy();
   expect(screen.queryByLabelText("Validation points")).toBeNull();
 });
 

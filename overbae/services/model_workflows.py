@@ -130,6 +130,8 @@ def describe(kind, record):
 
 
 def next_actions(kind, record):
+    if kind == "native_evaluation" and record.deleted_at is not None:
+        return ["get_job"]
     if record.state == "completed":
         return ["get_job"]
     if kind == "native_evaluation":
@@ -156,6 +158,8 @@ def next_actions(kind, record):
 
 
 def guidance(kind, record):
+    if kind == "native_evaluation" and record.deleted_at is not None:
+        return {"action_requirements": {}, "input_required": False, "poll_after_seconds": None}
     required = {}
     if kind == "training_experiment" and record.state == "prepared":
         required = {

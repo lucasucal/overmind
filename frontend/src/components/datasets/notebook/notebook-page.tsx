@@ -254,7 +254,7 @@ export function DatasetNotebook({
         {preparationQuery.isPending ? (
           <Spinner />
         ) : cells.length === 0 ? (
-          <div className="overflow-y-auto pl-10">
+          <div className="overflow-y-auto pr-10">
             <SourceLanding
               brief={dataset.brief ?? ""}
               busy={busy}

@@ -63,9 +63,9 @@ report "opaque bg-white/bg-black (use bg-foreground / bg-background)" \
 report "arbitrary text-[Npx/rem/em] (use scale tokens)" \
   'text-\[[0-9.]+(px|rem|em)\]' \
   'routes/login.tsx'
-# Three faces, three jobs: PP Mondwest = titles, Geist Pixel = everything else
-# (the default, needs no class), NeueBit = sidebar nav and breadcrumb only. A
-# title picks a step from lib/typography.ts rather than spelling the face.
+# Three faces, three jobs: PP Mondwest = main page title, Geist Pixel = other content
+# (the default), NeueBit = sidebar nav and breadcrumb only. A
+# heading picks a step from lib/typography.ts rather than spelling the face.
 report "font-display / page-title (use TITLE.* from lib/typography)" \
   '\bfont-display\b|"page-title|page-title ' \
   'lib/typography\.ts|styles\.css'
@@ -76,8 +76,8 @@ report "title class + explicit text size (size comes from the step)" \
 report "prose-body literal (use PROSE from lib/typography)" \
   'prose-body' \
   'lib/typography\.ts|styles\.css'
-# Mondwest ships a Regular master only — a weight utility synthesizes bold.
-report "title + weight utility (Mondwest has one master)" \
+# The role owns weight; call sites must not override it.
+report "title + weight utility (use the role weight)" \
   '(title-hero|page-title|title-section|title-card)[^"'"'"']*font-(medium|semibold|bold)|font-(medium|semibold|bold)[^"'"'"']*(title-hero|page-title|title-section|title-card)' \
   'lib/typography\.ts|styles\.css'
 # NeueBit's bold master is reserved for its accent surfaces (active sidebar row,

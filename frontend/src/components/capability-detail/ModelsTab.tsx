@@ -19,19 +19,14 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icons";
 import { QueryError } from "@/components/ui/query-error";
 import { SectionCard } from "@/components/ui/section-card";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import { LoadingState, Spinner } from "@/components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { blockedReason, useSetActiveModel } from "@/hooks/use-capability-active-model";
 import { useGuestGate } from "@/hooks/use-guest-gate";
 import { useDeployedModelQuery, useDeployedModelsQuery } from "@/hooks/use-inference";
+import { useTableSort } from "@/hooks/use-table-sort";
 import { featureFlags } from "@/lib/feature-flags";
 import { formatNumber } from "@/lib/formatters";
 import { PROSE } from "@/lib/typography";
@@ -291,6 +286,9 @@ function LiveModelCard({
 }
 
 export function ModelsTab({ capability, capabilityId, projectId }: ModelsTabProps) {
+  const { sort, onSort, sortRows } = useTableSort<
+    "live" | "model" | "baseModelId" | "finetuningJobName" | "modelId" | "status"
+  >();
   const navigate = useNavigate();
   const guard = useGuestGate();
   const {
@@ -356,16 +354,58 @@ export function ModelsTab({ capability, capabilityId, projectId }: ModelsTabProp
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[6%] text-center">Live</TableHead>
-                <TableHead className="w-[34%]">Model</TableHead>
-                <TableHead className="w-[16%] text-center">Base model</TableHead>
-                <TableHead className="w-[18%] text-center">Training job</TableHead>
-                <TableHead className="w-[16%] text-center">Reference</TableHead>
-                <TableHead className="w-[10%] text-center">Status</TableHead>
+                <SortableHeader
+                  className="w-[6%] text-center"
+                  label="Live"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="live"
+                />
+                <SortableHeader
+                  className="w-[34%]"
+                  label="Model"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="model"
+                />
+                <SortableHeader
+                  className="w-[16%] text-center"
+                  label="Base model"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="baseModelId"
+                />
+                <SortableHeader
+                  className="w-[18%] text-center"
+                  label="Training job"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="finetuningJobName"
+                />
+                <SortableHeader
+                  className="w-[16%] text-center"
+                  label="Reference"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="modelId"
+                />
+                <SortableHeader
+                  className="w-[10%] text-center"
+                  label="Status"
+                  onSort={onSort}
+                  sort={sort}
+                  sortKey="status"
+                />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {models.map((m) => (
+              {sortRows(models, (m, key) =>
+                key === "live"
+                  ? m.id === liveId
+                  : key === "model"
+                    ? m.finetuningJobName || m.modelId
+                    : m[key]
+              ).map((m) => (
                 <FineTunedRow
                   isLive={m.id === liveId}
                   isPending={!!pendingId && pendingId === m.id}

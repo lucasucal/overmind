@@ -751,6 +751,8 @@ def _get_job_sync(payload: GetJobInput, context: MCPContext) -> GetJobOutput:
         details = {
             "model_id": job.model_id,
             "base_model_id": job.base_model_id,
+            "inference_contract": job.inference_contract,
+            "inference_url": job.inference_url or None,
             "finetune_job_id": str(job.finetuning_job_id) if job.finetuning_job_id else None,
         }
         primary = _link("deployments", str(job.id), label)

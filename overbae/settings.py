@@ -427,6 +427,7 @@ CELERY_TASK_ROUTES = {
     "overbae.tasks.data_partitions.build_plan": {"queue": "batch"},
     "overbae.tasks.decision_performance.measure": {"queue": "batch"},
     "overbae.tasks.native_evaluation.advance_plan": {"queue": "batch"},
+    "overbae.tasks.native_evaluation.refresh_monitor": {"queue": "batch"},
     "overbae.tasks.training_preparation.inspect_preparation": {"queue": "io"},
     "overbae.tasks.eval.prepare_sample": {"queue": "batch"},
     "overbae.tasks.datasets.land": {"queue": "landing"},

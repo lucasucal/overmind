@@ -103,6 +103,7 @@ def test_manifest_annotations_cover_read_only_world_and_cost_metadata():
         "retry_deployment": (False, False, True, "gpu", "job"),
         "run_inference": (False, True, True, "llm", "job"),
         "inspect_operation": (True, True, False, "free", "sync"),
+        "inspect_native_evaluation": (True, True, False, "free", "sync"),
         "get_model_swap_prompt": (True, True, False, "free", "sync"),
         "inspect_connectors": (True, True, True, "compute", "sync"),
         "configure_connector": (False, False, False, "free", "sync"),

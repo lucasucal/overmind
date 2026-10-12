@@ -20,6 +20,7 @@ from modal_shared.operational_events import STORE
 from overbae.core.errors import InputValidationError
 from overbae.models import InferenceCall, InferenceRequest, Project
 from overbae.services import operational_progress
+from overbae.services.decision_serving import validate_requests
 from overbae.services.deployed_chat import is_cold_start, record_inference_call
 from overbae.services.deployment import modal_environment, poll_operation
 from overbae.services.provider_progress import collect
@@ -35,25 +36,46 @@ def recover_existing(deployment, request_key, payload):
     ).first()
     if request is None:
         return None
-    inputs = {key: payload.get(key) for key in ("messages", "temperature")}
-    inputs.update(
-        max_tokens=payload.get("max_tokens") or DEFAULT_OUTPUT_TOKENS, deployment=str(deployment.pk)
-    )
+    inputs = request_inputs(deployment, payload)
+    inputs["deployment"] = str(deployment.pk)
     if any(request.payload.get(key) != value for key, value in inputs.items()):
         raise InputValidationError("Request key is already bound to different inference inputs.")
     return request
 
 
-def submit(deployment, user, request_key, payload):
+def request_inputs(deployment, payload):
+    if deployment.inference_contract == "decision":
+        if (
+            payload.get("messages")
+            or payload.get("max_tokens") is not None
+            or payload.get("temperature") is not None
+        ):
+            raise InputValidationError(
+                "Decision models accept decisions, not chat generation parameters."
+            )
+        return {"decisions": validate_requests(payload.get("decisions"))}
+    if payload.get("decisions") is not None or not payload.get("messages"):
+        raise InputValidationError("Chat models require messages, not decisions.")
+    return {
+        "messages": payload["messages"],
+        "temperature": payload.get("temperature")
+        if payload.get("temperature") is not None
+        else 1.0,
+        "max_tokens": payload.get("max_tokens") or DEFAULT_OUTPUT_TOKENS,
+    }
+
+
+def submit(deployment, user, request_key, payload, *, source="mcp"):
     existing = recover_existing(deployment, request_key, payload)
     if existing:
         return existing
-    maximum = payload.get("max_tokens") or DEFAULT_OUTPUT_TOKENS
-    if maximum >= deployment.max_model_len:
+    inputs = request_inputs(deployment, payload)
+    if deployment.status != "ready":
+        raise InputValidationError("Inference requires a ready deployment.")
+    if inputs.get("max_tokens", 0) >= deployment.max_model_len:
         raise InputValidationError(CONTEXT_BUDGET_MESSAGE)
     payload = {
-        **payload,
-        "max_tokens": maximum,
+        **inputs,
         "deployment": str(deployment.pk),
         "environment": modal_environment(),
         "model_id": deployment.model_id,
@@ -62,7 +84,15 @@ def submit(deployment, user, request_key, payload):
         "max_model_len": deployment.max_model_len,
         "lora_rank": deployment.lora_rank,
         "adapter_path": deployment.adapter_path,
+        "inference_contract": deployment.inference_contract,
+        "source": source,
     }
+    if deployment.inference_contract == "decision":
+        payload.update(
+            environment=deployment.serving_runtime["environment"],
+            serving_app=deployment.serving_runtime["app"],
+            artifact_identity=deployment.checkpoint_hash,
+        )
     fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
     with transaction.atomic():
         Project.objects.select_for_update().get(pk=deployment.project_id)
@@ -90,7 +120,9 @@ async def bounded_call(method, *args, **kwargs):
 
 def spawn(request):
     function = modal.Function.from_name(
-        "overmind-inference", "inference_request", environment_name=request.payload["environment"]
+        request.payload.get("serving_app", "overmind-inference"),
+        "inference_request",
+        environment_name=request.payload["environment"],
     )
     return async_to_sync(bounded_call)(
         function.spawn.aio, str(request.pk), request.payload
@@ -177,7 +209,14 @@ def advance(request_id):
                 else:
                     result = {
                         key: result.get(key)
-                        for key in ("content", "usage", "finish_reason", "latency_ms")
+                        for key in (
+                            "content",
+                            "usage",
+                            "finish_reason",
+                            "latency_ms",
+                            "predictions",
+                            "model_identity",
+                        )
                     }
                     result["truncated"] = result["finish_reason"] in INCOMPLETE_FINISH_REASONS
                     changes = {
@@ -235,7 +274,7 @@ def finalize(request_id):
                 request_id=request.pk,
                 outcome=request.state,
                 error_code=request.error_code,
-                source="mcp",
+                source=request.payload.get("source", "mcp"),
             )
 
 

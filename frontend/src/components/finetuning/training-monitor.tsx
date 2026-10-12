@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
 
-import { type Query, useQueries } from "@tanstack/react-query";
+import { type Query, useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
 import apiClient from "@/client";
 import { EntityRef } from "@/components/entity-ref";
-import { DevelopmentMonitor } from "@/components/finetuning/development-monitor";
+import {
+  DevelopmentMonitor,
+  DevelopmentMonitorSeries,
+} from "@/components/finetuning/development-monitor";
 import {
   groupEvaluationDisplayRows,
   hasPendingEvaluations,
@@ -32,6 +35,7 @@ import {
   isTerminalStatus,
   stepsLabelFor,
 } from "@/components/finetuning/job-snapshot";
+import { meanMetricScore } from "@/components/finetuning/judge-eval-score";
 import {
   classMetricsSourceLabel,
   JudgeEvalTableRow,
@@ -42,7 +46,8 @@ import { liveSeriesPoints } from "@/components/finetuning/loss-series";
 import type { MetricKind } from "@/components/finetuning/metric-summary";
 import { ModelLiveAction } from "@/components/finetuning/model-live-action";
 import { MonitorChartCard } from "@/components/finetuning/monitor-chart-card";
-import { NativeEvaluationPanel } from "@/components/finetuning/native-evaluation-panel";
+import { NativeEvaluationTable } from "@/components/finetuning/native-evaluation-table";
+import { PredictionLabels } from "@/components/finetuning/prediction-labels";
 import { RunConfiguration } from "@/components/finetuning/run-configuration";
 import { StageProgress } from "@/components/finetuning/stage-progress";
 import { scrubInfraLeak, userFacingJobError } from "@/components/finetuning/train/model-config";
@@ -61,6 +66,7 @@ import { Icon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageShell } from "@/components/ui/page-shell";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -72,6 +78,7 @@ import {
   useRetryFinetuningJobMutation,
 } from "@/hooks/use-finetuning";
 import { useDeployedModelsQuery } from "@/hooks/use-inference";
+import { useTableSort } from "@/hooks/use-table-sort";
 import { seriesColor } from "@/lib/colors";
 import { groupCostUsd, jobCostUsd } from "@/lib/finetuning-cost";
 import {
@@ -86,7 +93,7 @@ import { formatElapsed } from "@/lib/formatters";
 import { errorMessage } from "@/lib/notify";
 import { PROSE } from "@/lib/typography";
 import { cn, scorePct } from "@/lib/utils";
-import type { FinetuningJobList } from "@/openapi";
+import { type FinetuningJobList, type NativeEvaluation, ResponseError } from "@/openapi";
 
 export function WizardMonitor({
   projectId,
@@ -184,6 +191,41 @@ export function TrainingMonitorPanel({
     pageSize: 100,
     projectId,
   });
+  const experimentId = groupJobs.some(isNativeJob) ? groupJobs[0]?.groupId : null;
+  const experimentQuery = useQuery({
+    enabled: !!experimentId,
+    queryFn: async () => {
+      try {
+        return await apiClient.trainingExperiments.trainingExperimentsRetrieve({
+          id: experimentId!,
+        });
+      } catch (error) {
+        // Ad-hoc job groups do not have a TrainingExperiment record.
+        if (error instanceof ResponseError && error.response.status === 404) return null;
+        throw error;
+      }
+    },
+    queryKey: ["training-experiment", projectId, experimentId],
+    refetchInterval: (query) =>
+      query.state.data === null ||
+      ["completed", "failed", "cancelled"].includes(query.state.data?.state ?? "")
+        ? false
+        : 5_000,
+  });
+  const experimentEvaluationId = experimentQuery.data?.evaluation;
+  const experimentEvaluationQuery = useQuery({
+    enabled: !!experimentEvaluationId,
+    queryFn: () =>
+      apiClient.nativeEvaluations.nativeEvaluationsRetrieve({ id: experimentEvaluationId! }),
+    queryKey: ["native-evaluation", projectId, experimentEvaluationId],
+    refetchInterval: (query) => {
+      const state = query.state.data?.state;
+      return query.state.data?.deletedAt ||
+        ["completed", "failed", "submission_unknown"].includes(state ?? "")
+        ? false
+        : 5_000;
+    },
+  });
   const deployedUuidByServingId = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of deployedQuery.data?.results ?? []) {
@@ -210,6 +252,9 @@ export function TrainingMonitorPanel({
     })),
   });
 
+  const { sort, onSort, sortRows } = useTableSort<
+    "experiment" | "evaluation" | "status" | "score" | "model" | "samples" | "created"
+  >();
   if (jobQuery.error && !job) {
     return (
       <Alert variant="destructive">
@@ -234,6 +279,15 @@ export function TrainingMonitorPanel({
     : (curvesQueries[snapshots.indexOf(focus)]?.isLoading ?? false);
 
   const judgeEvalRows = groupEvaluationDisplayRows(focus ? [focus] : snapshots);
+  const nativePlans = new Map<string, NativeEvaluation>();
+  for (const snapshot of snapshots) {
+    const plan = snapshot.job.nativeEvaluation;
+    if (plan) nativePlans.set(plan.id, plan);
+  }
+  if (job.nativeEvaluation) nativePlans.set(job.nativeEvaluation.id, job.nativeEvaluation);
+  if (experimentEvaluationQuery.data) {
+    nativePlans.set(experimentEvaluationQuery.data.id, experimentEvaluationQuery.data);
+  }
 
   // The backend stamps class_metrics only for label-referenced eval datasets.
   const hasClassMetrics = snapshots.some((s) =>
@@ -317,7 +371,7 @@ export function TrainingMonitorPanel({
               ))}
             </div>
           </div>
-          <dl className="flex shrink-0 flex-col items-end gap-1 text-xs">
+          <dl className="flex max-w-full shrink-0 flex-col items-end gap-1 text-xs">
             <div className="flex items-baseline gap-2">
               <dt className="text-muted-foreground">Dataset</dt>
               <dd className="max-w-[240px]">
@@ -330,6 +384,12 @@ export function TrainingMonitorPanel({
                 />
               </dd>
             </div>
+            <PredictionLabels
+              datasetNames={
+                new Map(datasetsQuery.data?.results?.map((dataset) => [dataset.id, dataset.name]))
+              }
+              jobs={(focus ? [focus.job] : groupJobs).filter(isNativeJob)}
+            />
             <div className="flex items-baseline gap-2">
               <dt className="text-muted-foreground">Started</dt>
               <dd className="font-medium">
@@ -410,10 +470,26 @@ export function TrainingMonitorPanel({
 
           {focus && (
             <DevelopmentMonitor
+              color={focus.color}
               jobId={focus.job.id}
               key={focus.job.id}
               modelName={getModelProviderInfo(focus.job.baseModel).modelLabel}
               status={focus.job.status}
+            />
+          )}
+
+          {isAll && (
+            <DevelopmentMonitorSeries
+              runs={snapshots.map((s) => ({
+                color: s.color,
+                jobId: s.job.id,
+                modelName:
+                  getModelProviderInfo(s.job.baseModel).modelLabel +
+                  (snapshots.filter((other) => other.job.baseModel === s.job.baseModel).length > 1
+                    ? ` · ${experimentLabel(s.job)}`
+                    : ""),
+                status: s.job.status,
+              }))}
             />
           )}
 
@@ -556,11 +632,16 @@ export function TrainingMonitorPanel({
         </div>
       </div>
 
-      {snapshots
-        .filter((s) => isNativeJob(s.job))
-        .map((s) => (
-          <NativeEvaluationPanel job={s.job} key={s.job.id} projectId={projectId} />
-        ))}
+      {snapshots.some((s) => isNativeJob(s.job)) && (
+        <NativeEvaluationTable
+          error={experimentQuery.error ?? experimentEvaluationQuery.error}
+          focusJobId={focusJobId}
+          jobs={groupJobs}
+          loading={experimentQuery.isLoading || experimentEvaluationQuery.isLoading}
+          plans={[...nativePlans.values()]}
+          projectId={projectId}
+        />
+      )}
       {!snapshots.every((s) => isNativeJob(s.job)) && (
         <Card className="flex flex-col gap-3 overflow-hidden p-4 pb-0">
           <div className="flex items-center gap-2">
@@ -588,20 +669,68 @@ export function TrainingMonitorPanel({
                       gutter doesn't read as an empty column. */}
                     <TableHead aria-label="Expand" className="w-10 border-r-0 px-1" />
                     {isAll && (
-                      <TableHead className="w-48 whitespace-nowrap px-2">Experiment</TableHead>
+                      <SortableHeader
+                        className="w-48 whitespace-nowrap px-2"
+                        label="Experiment"
+                        onSort={onSort}
+                        sort={sort}
+                        sortKey="experiment"
+                      />
                     )}
-                    <TableHead className="w-56 whitespace-nowrap px-2">Evaluation</TableHead>
-                    <TableHead className="w-44 whitespace-nowrap px-2">Status</TableHead>
-                    <TableHead className="w-36 whitespace-nowrap px-2">Score</TableHead>
-                    <TableHead className="px-2">Model</TableHead>
-                    <TableHead className="w-20 whitespace-nowrap px-2 text-center">
-                      Samples
-                    </TableHead>
-                    <TableHead className="w-28 whitespace-nowrap px-2">Created</TableHead>
+                    <SortableHeader
+                      className="w-56 whitespace-nowrap px-2"
+                      label="Evaluation"
+                      onSort={onSort}
+                      sort={sort}
+                      sortKey="evaluation"
+                    />
+                    <SortableHeader
+                      className="w-44 whitespace-nowrap px-2"
+                      label="Status"
+                      onSort={onSort}
+                      sort={sort}
+                      sortKey="status"
+                    />
+                    <SortableHeader
+                      className="w-36 whitespace-nowrap px-2"
+                      label="Score"
+                      onSort={onSort}
+                      sort={sort}
+                      sortKey="score"
+                    />
+                    <SortableHeader
+                      className="px-2"
+                      label="Model"
+                      onSort={onSort}
+                      sort={sort}
+                      sortKey="model"
+                    />
+                    <SortableHeader
+                      className="w-20 whitespace-nowrap px-2 text-center"
+                      label="Samples"
+                      onSort={onSort}
+                      sort={sort}
+                      sortKey="samples"
+                    />
+                    <SortableHeader
+                      className="w-28 whitespace-nowrap px-2"
+                      label="Created"
+                      onSort={onSort}
+                      sort={sort}
+                      sortKey="created"
+                    />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {judgeEvalRows.map(({ row, snapshots: rowSnapshots }) => (
+                  {sortRows(judgeEvalRows, ({ row, snapshots: rowSnapshots }, key) => {
+                    if (key === "experiment") return rowSnapshots.map((s) => s.job.name).join(", ");
+                    if (key === "evaluation") return row.checkpoint_step ?? row.kind;
+                    if (key === "status") return row.status;
+                    if (key === "score") return meanMetricScore(row);
+                    if (key === "model") return row.model_id;
+                    if (key === "samples") return row.sample_count;
+                    return row.created_at ? new Date(row.created_at).getTime() : null;
+                  }).map(({ row, snapshots: rowSnapshots }) => (
                     <JudgeEvalTableRow
                       deployedUuidByServingId={deployedUuidByServingId}
                       isAll={isAll}
@@ -650,7 +779,7 @@ function ExperimentRunCard({
           <h3 className="text-sm font-medium text-foreground">{experimentLabel(job)}</h3>
           <ModelProviderChip className="max-w-[260px]" model={job.baseModel} />
         </div>
-        <dl className="flex shrink-0 flex-col items-end gap-1 text-xs">
+        <dl className="flex max-w-full shrink-0 flex-col items-end gap-1 text-xs">
           {showIdentityMeta && datasetName != null && (
             <div className="flex items-baseline gap-2">
               <dt className="text-muted-foreground">Dataset</dt>
@@ -665,6 +794,7 @@ function ExperimentRunCard({
               </dd>
             </div>
           )}
+          {showIdentityMeta && native && <PredictionLabels jobs={[job]} />}
           {showIdentityMeta && (
             <div className="flex items-baseline gap-2">
               <dt className="text-muted-foreground">Started</dt>

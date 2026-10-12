@@ -274,10 +274,15 @@ class RetryDeploymentInput(MCPModel):
     deployment: str = Field(min_length=1, max_length=255)
 
 
+class DeployFinetuneInput(MCPModel):
+    finetune: str = Field(min_length=1, max_length=255)
+
+
 class DeploymentReference(MCPModel):
     id: str
     model_id: str
     status: str
+    inference_contract: str = "chat"
     inference_url: str | None = None
     resource: ResourceLinkContract
 
@@ -286,6 +291,13 @@ class RetryDeploymentOutput(MCPModel):
     summary: str = Field(min_length=1, max_length=240)
     deployment: DeploymentReference
     retry: JobReceipt
+    resource_links: list[ResourceLinkContract] = Field(max_length=2)
+
+
+class DeployFinetuneOutput(MCPModel):
+    summary: str = Field(min_length=1, max_length=240)
+    deployment: DeploymentReference
+    job: JobReceipt
     resource_links: list[ResourceLinkContract] = Field(max_length=2)
 
 

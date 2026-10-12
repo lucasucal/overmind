@@ -46,7 +46,6 @@ import type {
   FinetuningJobRequestModelTierEnum,
 } from "@/openapi";
 import { BackendEnum } from "@/openapi";
-import { defaultMonitoring, type MonitoringOptions } from "./monitoring-controls";
 
 const VALIDATION_SPLIT = {
   splitMethod: "random",
@@ -99,7 +98,6 @@ export function useTrainWizard({
   const [capabilityId, setCapabilityIdState] = useState(initialCapabilityId ?? "");
   const [datasetId, setDatasetIdState] = useState(initialDatasetId ?? "");
   const [preTrainingBaseline, setPreTrainingBaseline] = useState(true);
-  const [monitoringChoice, setMonitoring] = useState<MonitoringOptions | null>(null);
   const [validation, setValidation] = useState<DatasetValidationResponse | null>(null);
   const [validating, setValidating] = useState(false);
   const [evalDatasetId, setEvalDatasetId] = useState(initialEvalDatasetId ?? "");
@@ -276,13 +274,19 @@ export function useTrainWizard({
     (hasToolCalling ? toolCatalogQuery.data : baseCatalogQuery.data) ??
     baseCatalogQuery.data ??
     EMPTY_CATALOG;
-  const monitoring = useMemo<MonitoringOptions>(
-    () =>
-      monitoringChoice ?? {
-        ...defaultMonitoring,
-        mode: catalog.backend === "together" ? "off" : "adaptive",
-      },
-    [monitoringChoice, catalog.backend]
+  const monitoring = useMemo(
+    () => ({
+      early_stopping: null,
+      interval_steps: null,
+      loss_sample: 2048,
+      max_checks: 12,
+      mode: catalog.backend === "together" ? "off" : "adaptive",
+      overhead_fraction: 0.1,
+      selection: "last",
+      target_seconds: 300,
+      train_sample: 256,
+    }),
+    [catalog.backend]
   );
 
   // Every constraint-passing model, ranked by grade; `shown` names the opening line-up.
@@ -693,7 +697,6 @@ export function useTrainWizard({
   ]);
 
   const dirty =
-    monitoringChoice !== null ||
     evaluationEnabled !== Boolean(initialEvalDatasetId) ||
     Boolean(judgeModel) ||
     benchmarkSelection !== null ||
@@ -747,7 +750,6 @@ export function useTrainWizard({
     launchBlocker,
     launchError,
     launching,
-    monitoring,
     nativeDecision,
     overlapCount,
     preTrainingBaseline,
@@ -765,7 +767,6 @@ export function useTrainWizard({
     setEvalSetId,
     setEvaluationEnabled,
     setJudgeModel,
-    setMonitoring,
     setPreTrainingBaseline,
     setRunName: (value: string) => {
       setRunNameDirty(true);
