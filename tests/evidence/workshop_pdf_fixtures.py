@@ -157,6 +157,15 @@ def mixed_blank(path, pages=6, blank=(3, 6)):
     pdf.save()
 
 
+def padded(source, path, size):
+    data = source.read_bytes()
+    assert data.endswith(b"%%EOF\n") and len(data) <= size, (len(data), size)
+    path.write_bytes(data + b"\n" * (size - len(data)))
+
+
+LIMIT_BYTES = 100 * 1024**2
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("directory", type=Path)
@@ -222,6 +231,12 @@ def main():
     ):
         uncompressed_scans(args.directory / name, pages)
         record(name, pages, "scanned", expected)
+    for name, size, expected in (
+        ("exact-byte-limit.pdf", LIMIT_BYTES, "idle"),
+        ("limit-plus-one-byte.pdf", LIMIT_BYTES + 1, "error"),
+    ):
+        padded(args.directory / "near-byte-limit.pdf", args.directory / name, size)
+        record(name, 8, "scanned", expected)
     writer = PdfWriter()
     writer.append(PdfReader(args.directory / "native-1.pdf"))
     writer.encrypt("fixture-password")

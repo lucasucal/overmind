@@ -2008,6 +2008,98 @@ class Replay:
         assert self.inspect(dataset)["sources_total"] == 3
         return {"failed_attempt": failed, "previous_cell_preserved": True, "recovered_sources": 3}
 
+    def pdf_wait_landing(self, dataset, seconds=30):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            job = self.call("get_job", {"kind": "dataset_run", "id": dataset})
+            if job["status"] == "landing":
+                return job
+            assert job["status"] in {"queued", "running"}, job
+            time.sleep(0.05)
+        raise AssertionError(f"Dataset never reported landing: {dataset}")
+
+    def pdf_cancel_during_landing(self):
+        directory = Path(os.environ["WORKSHOP_ACCEPTANCE_PDFS"])
+        dataset = upload_file(
+            directory / "scanned-25.pdf",
+            project_id=str(self.project.pk),
+            api_key=self.key,
+            api_url=BASE,
+            intent="explore",
+        )["id"]
+        landing = self.pdf_wait_landing(dataset)
+        self.call("cancel_dataset", {"dataset": dataset})
+        started = time.monotonic()
+        while True:
+            job = self.call("get_job", {"kind": "dataset_run", "id": dataset})
+            if job["status"] != "landing":
+                break
+            assert time.monotonic() - started < 300, job
+            time.sleep(0.2)
+        cancelled = {
+            "status": job["status"],
+            "import": (job.get("progress") or {}).get("import"),
+            "seconds_to_leave_landing": round(time.monotonic() - started, 3),
+        }
+        assert job["status"] == "idle", job
+        assert not Dataset.objects.get(id=dataset).cells.filter(state="ok").exists()
+        # A normal landing of this file takes under ten seconds; wait past it so an
+        # in-flight worker that ignored the cancel would have published by now.
+        time.sleep(30)
+        assert not Dataset.objects.get(id=dataset).cells.filter(state="ok").exists()
+        assert self.inspect(dataset)["active"] is None
+        upload_file(
+            directory / "native-1.pdf",
+            project_id=str(self.project.pk),
+            api_key=self.key,
+            api_url=BASE,
+            dataset=dataset,
+        )
+        self.pdf_poll(dataset)
+        assert self.active(dataset)["rows"] > 0
+        return {
+            "observed_landing_progress": landing.get("progress"),
+            "after_cancel": cancelled,
+            "nothing_published_after_settle": True,
+            "recovered_with_new_upload": True,
+        }
+
+    def pdf_worker_loss_recovery(self):
+        directory = Path(os.environ["WORKSHOP_ACCEPTANCE_PDFS"])
+        dataset = upload_file(
+            directory / "scanned-25.pdf",
+            project_id=str(self.project.pk),
+            api_key=self.key,
+            api_url=BASE,
+            intent="explore",
+        )["id"]
+        self.pdf_wait_landing(dataset)
+        print(f"KILL_LANDING_WORKER_NOW {dataset}", flush=True)
+        started = time.monotonic()
+        attempts = set()
+        while True:
+            job = self.call("get_job", {"kind": "dataset_run", "id": dataset})
+            receipt = (job.get("progress") or {}).get("import") or {}
+            attempts.add((receipt.get("state"), receipt.get("attempts")))
+            if job["status"] not in {"landing", "running", "queued"}:
+                break
+            assert time.monotonic() - started < 900, job
+            time.sleep(1)
+        final = (job.get("progress") or {}).get("import") or {}
+        assert final.get("attempts", 0) >= 2, ("worker was not interrupted", sorted(map(str, attempts)))
+        if job["status"] == "idle":
+            assert self.active(dataset)["rows"] > 0
+            exported = self.exported_rows(dataset)
+            assert {row["page"] for row in exported} == set(range(1, 26)), "pages lost"
+        else:
+            assert job["status"] == "error" or final.get("can_resume"), job
+        return {
+            "final_status": job["status"],
+            "import": final,
+            "attempt_states": sorted(map(str, attempts)),
+            "seconds_to_terminal": round(time.monotonic() - started, 1),
+        }
+
     def pdf_batch_limit(self):
         directory = Path(os.environ["WORKSHOP_ACCEPTANCE_PDFS"])
         before = Dataset.objects.filter(project=self.project).count()
@@ -2618,6 +2710,9 @@ with TemporaryDirectory(prefix="workshop-mcp-acceptance-") as directory:
             replay.check("pdf_mixed_batch", replay.pdf_mixed_batch)
             replay.check("pdf_atomic_batch_recovery", replay.pdf_atomic_batch_recovery)
             replay.check("pdf_batch_limit_101", replay.pdf_batch_limit)
+            replay.check("pdf_cancel_during_landing", replay.pdf_cancel_during_landing)
+            if os.environ.get("WORKSHOP_ACCEPTANCE_KILL_WORKER"):
+                replay.check("pdf_worker_loss_recovery", replay.pdf_worker_loss_recovery)
         replay.check("partition_maximum_name_lengths", replay.partition_name_boundary)
         replay.check("partition_declared_and_projected_groups", replay.partition_declared_groups)
         replay.check("partition_projected_group_aliases", replay.partition_group_aliases)
