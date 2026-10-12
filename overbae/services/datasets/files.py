@@ -215,7 +215,7 @@ def iter_file_rows(
             return
         except (pa.ArrowException, OSError) as exc:
             raise FileError("The file is not readable Parquet.") from exc
-    if bare.endswith(".json") and os.path.getsize(path) > JSON_ARRAY_MAX_BYTES:
+    if bare.endswith(".json") and stored_stat(path).st_size > JSON_ARRAY_MAX_BYTES:
         raise FileError(
             f"A .json file is read whole and capped at {JSON_ARRAY_MAX_BYTES // 1024**2} MB "
             "— use JSONL for larger files."
@@ -278,7 +278,7 @@ def inspect_upload(
     if bare.endswith(documents.SUFFIXES):
         if size > documents.MAX_BYTES:
             raise FileError("Documents are capped at 100 MB.")
-        record = {"bytes": size, "mtime_ns": path.stat().st_mtime_ns, "rows": None}
+        record = {"bytes": size, "mtime_ns": stored_stat(path).st_mtime_ns, "rows": None}
         _inspection_path(upload_id).write_text(json.dumps(record), encoding="utf-8")
         return {"filename": filename, "bytes": size, "rows": None}
     try:
@@ -310,7 +310,7 @@ def inspect_upload(
         raise FileError(message) from exc
     if not rows:
         raise FileError("The file has no rows.")
-    record = {"bytes": size, "mtime_ns": path.stat().st_mtime_ns, "rows": rows}
+    record = {"bytes": size, "mtime_ns": stored_stat(path).st_mtime_ns, "rows": rows}
     _inspection_path(upload_id).write_text(json.dumps(record), encoding="utf-8")
     return {"filename": filename, "bytes": size, "rows": rows}
 
@@ -322,7 +322,7 @@ def _inspection_path(upload_id: Any) -> Path:
 def inspection(upload_id: Any) -> dict[str, Any] | None:
     try:
         record = json.loads(_inspection_path(upload_id).read_text(encoding="utf-8"))
-        stat = upload_data_path(upload_id).stat()
+        stat = stored_stat(upload_data_path(upload_id))
     except (OSError, ValueError):
         return None
     if (record.get("bytes"), record.get("mtime_ns")) != (stat.st_size, stat.st_mtime_ns):
@@ -343,7 +343,7 @@ def parse_text(text: str, *, filename: str = "") -> list[dict[str, Any]]:
 def upload_dir(upload_id: Any) -> Path:
     from django.conf import settings
 
-    return Path(settings.MEDIA_ROOT) / "uploads" / str(upload_id)
+    return Path(settings.MEDIA_ROOT) / "uploads" / str(uuid.UUID(str(upload_id)))
 
 
 def upload_data_path(upload_id: Any) -> Path:
@@ -379,9 +379,24 @@ def upload_filename(upload_id: Any) -> str:
         return ""
 
 
+def stored_stat(path: Path) -> os.stat_result:
+    """The file's size and mtime as the file server holds them.
+
+    Uploads live on EFS, which several API and worker tasks mount over NFS. A
+    path ``stat()`` is answered from the client's attribute cache for up to a
+    minute, so chunks another task appended stay invisible; ``open()``
+    revalidates the attributes (close-to-open consistency).
+    """
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        return os.fstat(fd)
+    finally:
+        os.close(fd)
+
+
 def upload_received(upload_id: Any) -> int:
     try:
-        return upload_data_path(upload_id).stat().st_size
+        return stored_stat(upload_data_path(upload_id)).st_size
     except OSError:
         return 0
 
@@ -393,23 +408,27 @@ def upload_byte_limit(filename: str) -> int:
 
 
 def append_chunk(upload_id: Any, offset: int, chunk: bytes) -> int:
-    """Idempotent on retry: a chunk whose range is already stored returns the size."""
-    path = upload_data_path(upload_id)
-    if not path.exists():
-        raise FileError("This upload has expired. Start it again.")
+    """Writes the chunk at its offset, never appended, so a retry that races or
+    follows an earlier attempt rewrites the same bytes instead of duplicating them."""
+    if offset < 0:
+        raise FileError("The chunk offset is negative.")
     limit = upload_byte_limit(upload_filename(upload_id))
     if offset + len(chunk) > limit:
         raise FileError(f"This file type is capped at {limit} bytes.")
-    size = path.stat().st_size
-    if offset == size:
-        with path.open("ab") as fh:
+    try:
+        fh = upload_data_path(upload_id).open("r+b")
+    except FileNotFoundError as exc:
+        raise FileError("This upload has expired. Start it again.") from exc
+    with fh:
+        size = os.fstat(fh.fileno()).st_size
+        if offset > size:
+            raise FileError(f"Chunk starts at {offset} but {size} bytes are stored.")
+        if offset + len(chunk) > size:
+            fh.seek(offset)
             fh.write(chunk)
             fh.flush()
             os.fsync(fh.fileno())
-        return path.stat().st_size
-    if offset < size and offset + len(chunk) <= size:
-        return size
-    raise FileError(f"Chunk starts at {offset} but {size} bytes are stored.")
+        return max(size, offset + len(chunk))
 
 
 def discard_upload(upload_id: Any) -> None:

@@ -486,7 +486,7 @@ def tick():
         "created_at"
     )[:1]:
         heartbeat("executing")
-        beat = worker_heartbeat.start(lambda: heartbeat("executing"))
+        beat = worker_heartbeat.start(lambda: heartbeat("executing"), owner=f"pipeline {run.pk}")
         try:
             workbench.execute(run.pk, script_executor=execute_script)
         finally:

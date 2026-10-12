@@ -6,6 +6,7 @@ from functools import wraps
 from typing import Any
 
 from django.conf import settings
+from redis.exceptions import LockNotOwnedError
 
 logger = logging.getLogger(__name__)
 
@@ -24,21 +25,27 @@ def _get_redis_client():
     return redis.from_url(_broker_url(), decode_responses=False)
 
 
-_DEFAULT_SAFETY_TIMEOUT = 7 * 24 * 60 * 60
+def _renew(lock, timeout: int, stop: threading.Event) -> None:
+    # A blip costs one extension, not the lock: the next try still lands within
+    # the lease. Only a lock that is already gone ends the renewal.
+    while not stop.wait(timeout / 3):
+        try:
+            lock.extend(timeout, replace_ttl=True)
+        except LockNotOwnedError:
+            logger.error("Lock %s lapsed while its holder still runs", lock.name)
+            return
+        except Exception:  # noqa: BLE001 — the holder keeps running; retry on the next beat
+            logger.warning("Could not renew lock %s", lock.name, exc_info=True)
 
 
 @contextmanager
-def acquire_task_lock(
-    lock_name: str,
-    blocking: bool = False,
-    timeout: int = _DEFAULT_SAFETY_TIMEOUT,
-    *,
-    renew: bool = False,
-):
-    """Redis lock with a safety expiry.
+def acquire_task_lock(lock_name: str, *, timeout: int, blocking: bool = False, renew: bool = False):
+    """Redis lock that a holder killed mid-task keeps for ``timeout`` seconds.
 
-    ``timeout`` bounds an abandoned lease. Renewing collectors keep a short lease
-    while alive; killing their process must not silence later observations for minutes.
+    Without ``renew`` the lock also lapses after ``timeout`` while its holder still
+    runs, so frequent periodic tasks pass a short one rather than stay silenced by a
+    stale lock. With ``renew`` it holds for as long as the holder lives, and
+    ``timeout`` only bounds how long a dead holder blocks the next one.
     Non-Redis brokers (``memory://`` in tests) cannot host a distributed lock, so they
     always grant.
     """
@@ -47,19 +54,11 @@ def acquire_task_lock(
         return
 
     client = _get_redis_client()
+    # Not thread-local: the renewing thread extends with the acquiring thread's token.
     lock = client.lock(
-        f"celery:lock:{lock_name}", timeout=timeout, blocking_timeout=0, thread_local=not renew
+        f"celery:lock:{lock_name}", timeout=timeout, blocking_timeout=0, thread_local=False
     )
-    stopped = threading.Event()
-    renewer = None
-
-    def maintain():
-        while not stopped.wait(timeout / 3):
-            try:
-                lock.extend(timeout, replace_ttl=True)
-            except Exception:
-                logger.exception("Lease renewal failed for task %s", lock_name)
-                return
+    stop = threading.Event()
 
     acquired = False
     try:
@@ -67,15 +66,14 @@ def acquire_task_lock(
         if acquired:
             logger.debug("Acquired lock for task: %s", lock_name)
             if renew:
-                renewer = threading.Thread(target=maintain, daemon=True)
-                renewer.start()
+                threading.Thread(
+                    target=_renew, args=(lock, timeout, stop), name=f"lock {lock_name}", daemon=True
+                ).start()
         else:
             logger.warning("Could not acquire lock for task: %s (already running)", lock_name)
         yield acquired
     finally:
-        stopped.set()
-        if renewer is not None:
-            renewer.join(timeout=1)
+        stop.set()
         if acquired:
             try:
                 lock.release()
@@ -85,10 +83,7 @@ def acquire_task_lock(
 
 
 def with_task_lock(
-    lock_name: str | None = None,
-    blocking: bool = False,
-    timeout: int = _DEFAULT_SAFETY_TIMEOUT,
-    renew: bool = False,
+    lock_name: str | None = None, blocking: bool = False, *, timeout: int, renew: bool = False
 ):
     def decorator(func: Callable) -> Callable:
         @wraps(func)

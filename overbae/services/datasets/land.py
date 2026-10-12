@@ -248,7 +248,7 @@ def read_file(
         "id": identity,
         "sha256": identity,
         "filename": filename,
-        "bytes": path.stat().st_size,
+        "bytes": files.stored_stat(path).st_size,
         "rows": len(rows),
         "extraction": extraction,
         "staged_path": str(path),

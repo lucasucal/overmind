@@ -38,7 +38,9 @@ training contract into the list shape so native labels render without a group.
 - Existing MCP finetuning/resources and training-runs API tests: 107 passed,
   1 failed. `test_readiness_classifies_selected_capability_and_defers_to_data_for_none`
   expects `code_generation` but gets `classification`; its readiness path does not
-  call the changed run-record code. Left untouched.
+  call the changed run-record code. The later branch cleanup corrected its fake
+  provider setup for both typed decisions and the chat fallback; the focused
+  Redis-backed check and the full backend run now pass that test.
 - Impeccable detector: no findings for the new component.
 
 Playwright screenshots were inspected at desktop 1440x1100 and mobile 390x844.
