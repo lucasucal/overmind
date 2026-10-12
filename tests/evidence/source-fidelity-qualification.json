@@ -770,7 +770,7 @@
     "not_part_of": "the 26-case single run at f62bb28; separate executions",
     "harness_commit": "5a666973984f27749303df45d84144763921803e",
     "scripts": {
-      "tests/evidence/workshop_mcp_acceptance.py": "49d4c05f39960d8d7319dcde9a86c101d52511427b8e07d1994c6e0c42c1771f",
+      "tests/evidence/workshop_mcp_acceptance.py": "d0ccaede510189506f9a3553d26d53c9c65fba9af0573e503de9deacd0d4bd79",
       "tests/evidence/workshop_pdf_fixtures.py": "04390b2237a4ede05a32ed813111ead9e280169e8fb925fdc1799fda98d7fc19"
     },
     "run_1": {
@@ -805,6 +805,7 @@
       "method": "docker compose kill celery-landing-worker while scanned-25.pdf was landing, then up -d",
       "result": "import attempt 1 running -> attempt 2 running -> complete; 25 of 25 pages exported; no manual resume"
     },
-    "billable_usage_records": 0
+    "billable_usage_records": 0,
+    "note": "Cases were executed at 5a66697; the scripts were then reformatted by pre-commit (ruff, mdformat) with no logic change, so these hashes are of the formatted files."
   }
 }

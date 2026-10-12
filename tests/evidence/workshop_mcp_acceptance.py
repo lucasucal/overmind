@@ -2086,7 +2086,10 @@ class Replay:
             assert time.monotonic() - started < 900, job
             time.sleep(1)
         final = (job.get("progress") or {}).get("import") or {}
-        assert final.get("attempts", 0) >= 2, ("worker was not interrupted", sorted(map(str, attempts)))
+        assert final.get("attempts", 0) >= 2, (
+            "worker was not interrupted",
+            sorted(map(str, attempts)),
+        )
         if job["status"] == "idle":
             assert self.active(dataset)["rows"] > 0
             exported = self.exported_rows(dataset)

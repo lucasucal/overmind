@@ -102,12 +102,12 @@ docker compose exec -T -e PYTHONPATH="$pdf_replay_dir" -e DO_NOT_TRACK=1 \
 
 Separate executions after the 26-case run, at harness commit `5a66697`; not added to its count. Details and hashes: `follow_on_limits_and_worker_loss` in the JSON. No paid providers.
 
-| Case | Result |
-| --- | --- |
-| `pdf_exact-byte-limit` (104,857,600 bytes, `near-byte-limit.pdf` plus trailing newlines) | Landed; original bytes and exported rows verified |
-| `pdf_limit-plus-one-byte` (104,857,601 bytes) | Refused before transfer; no `PUT`; 0 bytes uploaded |
-| `pdf_cancel_during_landing` (`scanned-25.pdf`) | `cancel_dataset` returned the dataset to `idle` in 0.011 s with the import receipt `cancelled`; no cell published after a 30 s wait (a normal landing takes about 9 s); a new upload to the same dataset landed |
-| `pdf_worker_loss_recovery` (`scanned-25.pdf`) | The landing worker was killed mid-landing. The receipt went attempt 1 running, attempt 2 running, complete, with all 25 pages exported and no manual resume. Terminal after 316 s |
+| Case                                                                                     | Result                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pdf_exact-byte-limit` (104,857,600 bytes, `near-byte-limit.pdf` plus trailing newlines) | Landed; original bytes and exported rows verified                                                                                                                                                               |
+| `pdf_limit-plus-one-byte` (104,857,601 bytes)                                            | Refused before transfer; no `PUT`; 0 bytes uploaded                                                                                                                                                             |
+| `pdf_cancel_during_landing` (`scanned-25.pdf`)                                           | `cancel_dataset` returned the dataset to `idle` in 0.011 s with the import receipt `cancelled`; no cell published after a 30 s wait (a normal landing takes about 9 s); a new upload to the same dataset landed |
+| `pdf_worker_loss_recovery` (`scanned-25.pdf`)                                            | The landing worker was killed mid-landing. The receipt went attempt 1 running, attempt 2 running, complete, with all 25 pages exported and no manual resume. Terminal after 316 s                               |
 
 ```sh
 # fixtures and copy steps as above; WORKSHOP_ACCEPTANCE_CASES='pdf_exact-byte-limit,pdf_limit-plus-one-byte,pdf_cancel_during_landing'
