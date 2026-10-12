@@ -122,3 +122,13 @@ After `docker compose restart api celery-landing-worker` (API healthy): host pyt
 | 10 Mixed-capability trace (root vs uniqueness)                          | `test_a_mixed_capability_trace_is_not_attributed_to_the_root`                                                                                             | `capability_id` is null                             | Yes — uniqueness only                            |
 | 11 Partial OCR land                                                     | `test_ocr_failure_never_lands_partial_native_rows`; `test_blank_pdf_reports_no_text_after_ocr`                                                            | Passed (no partial cell)                            | No                                               |
 | 12 MCP limit fields vs resource test                                    | `test_dataset_upload_resource_describes_cli_flow_and_server_limits`                                                                                       | Fields present; test pins them                      | Test-only                                        |
+
+## Main after PR 182 (overmind-core/overmind#182)
+
+Main gained `8e6a396` (streaming Data Workshop frames) after this branch diverged; a trial merge conflicts in about 40 files, so this evidence is for the branch without it.
+
+- Does not apply here: the sandbox memory budget and the 100,000-row cell guidance. Both belong to the notebook runner, which this branch removed.
+- Must be re-applied on merge: `FileRows` replaces `read_file_rows` in `files.py`, and main's `_iter_json` still guesses `data`/`rows`/`items`/`examples` and has no `rows_field`. The refusal, explicit field selection and the `trace_row` uniqueness change need porting onto the streaming reader, and landing now reads each file twice, so the field check must hold on both passes.
+- Already compatible: CSV/TSV numeric conversion keeps `007`, `1_000`, `nan` and 19-digit ids as text.
+- New losses to record as dispositions: a non-finite number nested in a JSON value is stored as `null`, and an integer column with nulls previews as `3`, not `3.0`.
+- Required before sign-off: re-run the 26-case replay and the follow-on cases on the merged tree.

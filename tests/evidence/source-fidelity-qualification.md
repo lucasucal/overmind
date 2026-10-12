@@ -98,8 +98,27 @@ docker compose exec -T -e PYTHONPATH="$pdf_replay_dir" -e DO_NOT_TRACK=1 \
   2>&1 | tee /private/tmp/source-fidelity-messy-report.log
 ```
 
+## Follow-on: byte limit, cancellation and worker loss
+
+Separate executions after the 26-case run, at harness commit `5a66697`; not added to its count. Details and hashes: `follow_on_limits_and_worker_loss` in the JSON. No paid providers.
+
+| Case | Result |
+| --- | --- |
+| `pdf_exact-byte-limit` (104,857,600 bytes, `near-byte-limit.pdf` plus trailing newlines) | Landed; original bytes and exported rows verified |
+| `pdf_limit-plus-one-byte` (104,857,601 bytes) | Refused before transfer; no `PUT`; 0 bytes uploaded |
+| `pdf_cancel_during_landing` (`scanned-25.pdf`) | `cancel_dataset` returned the dataset to `idle` in 0.011 s with the import receipt `cancelled`; no cell published after a 30 s wait (a normal landing takes about 9 s); a new upload to the same dataset landed |
+| `pdf_worker_loss_recovery` (`scanned-25.pdf`) | The landing worker was killed mid-landing. The receipt went attempt 1 running, attempt 2 running, complete, with all 25 pages exported and no manual resume. Terminal after 316 s |
+
+```sh
+# fixtures and copy steps as above; WORKSHOP_ACCEPTANCE_CASES='pdf_exact-byte-limit,pdf_limit-plus-one-byte,pdf_cancel_during_landing'
+# worker loss: add WORKSHOP_ACCEPTANCE_KILL_WORKER=1 and case pdf_worker_loss_recovery, then when the
+# log prints KILL_LANDING_WORKER_NOW run: docker compose kill celery-landing-worker && docker compose up -d celery-landing-worker
+```
+
+Limits of this proof: cancellation arrived before OCR progress was reported, and the OCR loop checks no cancellation, so extraction already running finishes without publishing. The worker loss was a `SIGKILL`, not a graceful restart or a broker outage.
+
 ## Limits of this proof
 
-Handwriting, multilingual OCR, table reconstruction, cancellation during PDF OCR, worker restart during large landing, and an exact 100 MiB boundary file were not added. A 2-page grid/two-column report was landed for phrase presence only. `near-byte-limit.pdf` landed; `over-byte-limit.pdf` was refused with no SDK PUT.
+Handwriting, multilingual OCR and table reconstruction were not added. A 2-page grid/two-column report was landed for phrase presence only. `near-byte-limit.pdf` landed; `over-byte-limit.pdf` was refused with no SDK PUT.
 Pipeline package execution is out of this package. Image 64MP / animated rejection remain pytest and MCP prose, not this 26-case list.
 The 2026-10-08 PDF replay is prior-revision evidence.

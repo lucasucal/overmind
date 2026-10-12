@@ -723,11 +723,10 @@
     "handwriting",
     "multilingual OCR",
     "table reconstruction (messy-report phrases retained as text; grid/two-column structure was not rebuilt)",
-    "cancellation during PDF OCR",
-    "worker restart during large landing",
-    "exact 100 MiB byte-boundary file (near-byte-limit landed; over-byte-limit refused with no PUT)",
     "Console extraction UI (Package A disposition: MCP is the control surface)",
-    "PDF /Rotate on native text is not proof of raster/EXIF orientation; live EXIF case is scan-rotated.jpg in document_and_ocr_evidence_round_trip"
+    "PDF /Rotate on native text is not proof of raster/EXIF orientation; live EXIF case is scan-rotated.jpg in document_and_ocr_evidence_round_trip",
+    "cancel_dataset was observed before OCR progress appeared; the OCR loop itself checks no cancellation, so cancellation takes effect at the next row batch or publish and in-flight extraction can run to completion without publishing",
+    "worker loss was a SIGKILL of the landing worker, not a graceful restart or a broker outage; recovery took one 5-minute lease plus a 30-second reconcile tick"
   ],
   "follow_on_messy_report": {
     "not_part_of": "the 26-case single run at f62bb28",
@@ -739,7 +738,9 @@
     "landing_seconds": 0.559,
     "extraction_method": "docling-native-pdf",
     "extraction_version": "2.131.0",
-    "limitations": ["Reading order and visual table structure are not reconstructed."],
+    "limitations": [
+      "Reading order and visual table structure are not reconstructed."
+    ],
     "log": "/private/tmp/source-fidelity-messy-report.log",
     "log_sha256": "faaf69f98dcc6e21c243e860ca2868fdc48b35a81c3e263bdcbf52cf75c8aed5",
     "scripts": {
@@ -764,5 +765,46 @@
         "HOLD-ZONE-C"
       ]
     }
+  },
+  "follow_on_limits_and_worker_loss": {
+    "not_part_of": "the 26-case single run at f62bb28; separate executions",
+    "harness_commit": "5a666973984f27749303df45d84144763921803e",
+    "scripts": {
+      "tests/evidence/workshop_mcp_acceptance.py": "49d4c05f39960d8d7319dcde9a86c101d52511427b8e07d1994c6e0c42c1771f",
+      "tests/evidence/workshop_pdf_fixtures.py": "04390b2237a4ede05a32ed813111ead9e280169e8fb925fdc1799fda98d7fc19"
+    },
+    "run_1": {
+      "log": "/private/tmp/claude-501/sf-new.log",
+      "log_sha256": "bea4640b8521a29835e09d10273dc818eaf382f6b760de6f0513b0e52e266f0e",
+      "cases": {
+        "pdf_exact-byte-limit": {
+          "passed": true,
+          "bytes": 104857600,
+          "sha256": "c723cfc0f1978926c39821e74b41950f1e938f0d4143d6f4b2524bea85b9b4d0",
+          "result": "landed; original bytes and exported rows verified"
+        },
+        "pdf_limit-plus-one-byte": {
+          "passed": true,
+          "bytes": 104857601,
+          "sha256": "066099c2f69dc6559383523cf8eacb4232eb32d3ed3ca3141a86e56ce8e4b5a9",
+          "result": "refused before transfer; no PUT; uploaded_bytes 0"
+        },
+        "pdf_cancel_during_landing": {
+          "passed": true,
+          "seconds": 30.97,
+          "result": "cancel_dataset on scanned-25.pdf at first landing poll: status idle in 0.011 s, import state cancelled, no ok cell after a 30 s settle (normal landing is 8.6 s), a new upload to the same dataset then landed"
+        }
+      }
+    },
+    "run_2_worker_loss": {
+      "log": "/private/tmp/claude-501/sf-kill.log",
+      "log_sha256": "2dbf4f01d0ec2d4cc8e4e0923310e0d233a862e47df34fd3f478a08035ac00f9",
+      "case": "pdf_worker_loss_recovery",
+      "passed": true,
+      "seconds": 316.6,
+      "method": "docker compose kill celery-landing-worker while scanned-25.pdf was landing, then up -d",
+      "result": "import attempt 1 running -> attempt 2 running -> complete; 25 of 25 pages exported; no manual resume"
+    },
+    "billable_usage_records": 0
   }
 }
