@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import json
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -75,6 +76,29 @@ def uncompressed_scans(path, pages):
     writer.write(path)
 
 
+def rotated_native(path):
+    document(path, 4, marker="Rotated evidence")
+    reader = PdfReader(str(path))
+    writer = PdfWriter()
+    for page, rotation in zip(reader.pages, (0, 90, 180, 270), strict=True):
+        writer.add_page(page)
+        writer.pages[-1].rotate(rotation)
+    buffer = BytesIO()
+    writer.write(buffer)
+    path.write_bytes(buffer.getvalue())
+
+
+def mixed_blank(path, pages=6, blank=(3, 6)):
+    pdf = Canvas(str(path), pagesize=(612, 792), invariant=True)
+    for number in range(1, pages + 1):
+        if number not in blank:
+            pdf.setFont("Helvetica", 14)
+            pdf.drawString(60, 720, f"Mixed blank evidence page {number:04d}")
+            pdf.drawString(60, 690, "Invoice total: 1234.56 USD")
+        pdf.showPage()
+    pdf.save()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("directory", type=Path)
@@ -82,7 +106,7 @@ def main():
     args.directory.mkdir(parents=True, exist_ok=True)
     fixtures = []
 
-    def record(name, pages, kind, expected="idle", marker=None):
+    def record(name, pages, kind, expected="idle", marker=None, **extra):
         path = args.directory / name
         fixtures.append(
             {
@@ -93,6 +117,7 @@ def main():
                 "marker": marker,
                 "bytes": path.stat().st_size,
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                **extra,
             }
         )
 
@@ -106,6 +131,16 @@ def main():
         record(name, pages, "scanned")
     document(args.directory / "mixed-30.pdf", 30, "mixed", "Mixed evidence")
     record("mixed-30.pdf", 30, "mixed")
+    rotated_native(args.directory / "rotated-native.pdf")
+    record("rotated-native.pdf", 4, "rotated", marker="Rotated evidence")
+    mixed_blank(args.directory / "mixed-blank-pages.pdf")
+    record(
+        "mixed-blank-pages.pdf",
+        6,
+        "mixed-blank",
+        marker="Mixed blank evidence",
+        blank_pages=[3, 6],
+    )
     for pages, name, expected in (
         (3, "large-scanned.pdf", "idle"),
         (8, "near-byte-limit.pdf", "idle"),

@@ -459,9 +459,7 @@ def trace_row(spans: list[Span], *, score: float | None) -> dict[str, Any]:
     delivered = _delivered(spans)
     usage = _usage(spans)
     capabilities = {s.capability_id: s.capability for s in spans if s.capability_id}
-    capability = root.capability or (
-        next(iter(capabilities.values())) if len(capabilities) == 1 else None
-    )
+    capability = next(iter(capabilities.values())) if len(capabilities) == 1 else None
     conversation = next(
         (s.conversation.external_id for s in (root, *spans) if s.conversation_id), None
     )

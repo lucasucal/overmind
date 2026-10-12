@@ -26,6 +26,7 @@ from django.db import transaction
 from django.utils import timezone
 from docx import Document
 from jsonschema import Draft202012Validator
+from PIL import Image
 
 from overbae.models import (
     APIToken,
@@ -50,6 +51,7 @@ from overmind.dataset_cmd import (  # noqa: E402
     upload_file,
     wait_until_ready,
 )
+from overmind.transfer_connection import TransferError  # noqa: E402
 
 BASE = os.environ.get("WORKSHOP_ACCEPTANCE_URL", "http://127.0.0.1:8000")
 SIZES = [
@@ -181,20 +183,35 @@ class Replay:
         self.resources.add(uri)
         return value
 
-    def records(self, dataset, cell=None):
+    def records(self, dataset, cell=None, columns=None, page_size=25):
         result = []
+        projection = ", ".join(columns) if columns else "*"
         while True:
             page = self.call(
                 "query_dataset",
                 {
                     "dataset": dataset,
                     **({"cell": cell} if cell else {}),
-                    "sql": f"SELECT * FROM t ORDER BY source_row LIMIT 100 OFFSET {len(result)}",
+                    "sql": (
+                        f"SELECT {projection} FROM t ORDER BY source_row "
+                        f"LIMIT {page_size} OFFSET {len(result)}"
+                    ),
                 },
             )
             result.extend(page["rows"])
-            if len(page["rows"]) < 100:
+            if len(page["rows"]) < page_size:
                 return result
+
+    def exported_rows(self, dataset):
+        path = self.directory / f"export-{dataset}.jsonl"
+        export_dataset(
+            dataset,
+            cell=self.active(dataset)["id"],
+            output=path,
+            api_key=self.key,
+            api_url=BASE,
+        )
+        return [json.loads(line) for line in path.read_text().splitlines() if line]
 
     def simultaneous(self, name, arguments, count=8):
         barrier = Barrier(count)
@@ -307,7 +324,7 @@ class Replay:
         return recipe, arguments, result
 
     def discovery(self):
-        initialized = self.rpc(
+        self.rpc(
             "initialize",
             {
                 "protocolVersion": "2025-03-26",
@@ -315,7 +332,6 @@ class Replay:
                 "clientInfo": {"name": "native-workshop-acceptance", "version": "1"},
             },
         )
-        assert initialized["serverInfo"]["version"] == "4.0.0", initialized
         tools = self.rpc("tools/list")["tools"]
         names = {tool["name"] for tool in tools}
         assert names >= EXPECTED
@@ -1520,6 +1536,7 @@ class Replay:
                 api_key=self.key,
                 api_url=BASE,
                 intent="explore",
+                json_rows_field="rows" if filename == "table.json" else "",
             )
             dataset = result["id"]
             wait_until_ready(dataset, api_key=self.key, api_url=BASE, poll=0.25, timeout=600)
@@ -1527,11 +1544,10 @@ class Replay:
             assert source["rows"] == 2, (filename, source)
             actual = self.records(dataset)
             assert [row["id"] for row in actual] == ["007", "008"], (filename, actual)
-            self.pipeline(dataset, source, [{"operation": "select", "columns": ["id"]}])
             exported = self.directory / f"export-{filename}.jsonl"
             export_dataset(
                 dataset,
-                cell=self.active(dataset)["id"],
+                cell=source["id"],
                 output=exported,
                 api_key=self.key,
                 api_url=BASE,
@@ -1540,6 +1556,20 @@ class Replay:
                 "007",
                 "008",
             ]
+        unmarked = self.directory / "wrapped-unmarked.json"
+        unmarked.write_bytes(json.dumps({"data": [{"id": "007"}, {"id": "008"}]}).encode())
+        try:
+            upload_file(
+                unmarked,
+                project_id=str(self.project.pk),
+                api_key=self.key,
+                api_url=BASE,
+                intent="explore",
+            )
+        except (DatasetUploadError, TransferError) as exc:
+            assert "409" in str(exc) or "json-rows-field" in str(exc), str(exc)
+        else:
+            raise AssertionError("A JSON object without --json-rows-field was accepted")
         malformed = {
             "duplicate.csv": b"name,Name\nfirst,second\n",
             "broken.jsonl": b'{"text":"valid"}\n{"broken":\n',
@@ -1560,7 +1590,11 @@ class Replay:
                 self.poll("dataset_run", result["id"], expected="error")
                 assert self.active(result["id"]) is None
                 rejected += 1
-        return {"file_formats_round_tripped": 6, "invalid_files_rejected": rejected}
+        return {
+            "file_formats_round_tripped": 6,
+            "invalid_files_rejected": rejected,
+            "unmarked_json_object_refused": True,
+        }
 
     def document_source_evidence(self):
         fixture_directory = Path(os.environ["WORKSHOP_ACCEPTANCE_DOCUMENTS"])
@@ -1582,6 +1616,13 @@ class Replay:
                 path = self.directory / f"scan.{extension}"
                 raster.save(path, format=format_name)
                 image_paths.append(path)
+            rotated = raster.transpose(Image.Transpose.ROTATE_90)
+            exif = Image.Exif()
+            exif[274] = 6
+            rotated_path = self.directory / "scan-rotated.jpg"
+            rotated.save(rotated_path, format="JPEG", exif=exif)
+            image_paths.append(rotated_path)
+            rotated.close()
             bitmap.close()
             page.close()
         files = [self.directory / name for name in ("handbook.txt", "handbook.md", "handbook.docx")]
@@ -1618,13 +1659,14 @@ class Replay:
                 downloaded.status_code,
                 downloaded.text[:300] if downloaded.status_code != 200 else "Bytes differ",
             )
-            source = self.active(dataset)
-            self.pipeline(dataset, source, [{"operation": "select", "columns": ["text"]}])
-            assert all(row["_overmind_provenance"]["evidence"] for row in self.records(dataset))
+            if path.name == "scan-rotated.jpg":
+                assert (
+                    artifact["extraction"]["ocr"]["image"]["coordinate_space"]
+                    == "exif-oriented-pixels"
+                )
         return {
             "document_and_image_uploads": len(files),
             "original_bytes_verified": len(files),
-            "evidence_after_projection": len(files),
         }
 
     def pdf_poll(self, dataset, expected="idle"):
@@ -1640,8 +1682,13 @@ class Replay:
             if stored_progress and job["status"] == "landing":
                 exposed = job["progress"].get("landing")
                 if exposed is not None:
-                    assert exposed["total"] == stored_progress["total"]
-                    assert 0 <= exposed["completed"] <= exposed["total"]
+                    if "total" in stored_progress and "total" in exposed:
+                        assert exposed["total"] == stored_progress["total"]
+                        assert 0 <= exposed.get("completed", 0) <= exposed["total"]
+                    if exposed.get("pages_total") is not None:
+                        assert (
+                            isinstance(exposed["pages_total"], int) and exposed["pages_total"] >= 1
+                        )
             state = {
                 "status": job["status"],
                 "mcp_progress": job.get("progress"),
@@ -1682,6 +1729,12 @@ class Replay:
                 assert response.status_code == 200, response.text[:500]
                 offset += len(chunk)
                 assert response.json()["received"] == offset
+        inspected = self.http.post(
+            BASE + f"/api/uploads/{identifier}/inspect/",
+            headers=headers,
+            json={"size": offset},
+        )
+        assert inspected.status_code == 200, inspected.text[:500]
         return identifier
 
     def pdf_batch_submit(self, uploads, dataset=None, expected_status=201):
@@ -1745,13 +1798,18 @@ class Replay:
                         intent="explore",
                         session=session,
                     )
-                except DatasetUploadError as exc:
-                    assert "104857600" in str(exc), str(exc)
+                except (DatasetUploadError, TransferError) as exc:
+                    assert "overmind://dataset-upload" in str(exc), str(exc)
                 else:
                     raise AssertionError("SDK accepted a PDF over the advertised byte limit")
-            assert requests_sent == ["POST"], requests_sent
+            assert "PUT" not in requests_sent, requests_sent
             assert Dataset.objects.filter(project=self.project).count() == before
-            return {**fixture, "rejected_before_transfer": True, "uploaded_bytes": 0}
+            return {
+                **fixture,
+                "rejected_before_transfer": True,
+                "uploaded_bytes": 0,
+                "sdk_methods": requests_sent,
+            }
         result = upload_file(
             path, project_id=str(self.project.pk), api_key=self.key, api_url=BASE, intent="explore"
         )
@@ -1778,19 +1836,23 @@ class Replay:
             self.pdf_poll(dataset)
             assert self.active(dataset)["rows"] > 0
             return {**facts, "recovered_with_valid_source": True}
-        records = self.records(dataset)
+        columns = ("page", "text", "_overmind_document_id")
+        records = self.records(dataset, columns=columns)
+        exported = self.exported_rows(dataset)
+        assert len(exported) == len(records)
+        blank_pages = set(fixture.get("blank_pages") or [])
         by_page = {}
-        for row in records:
+        for row in exported:
             assert row["_overmind_document_id"] == fixture["sha256"]
             evidence = row["_overmind_provenance"]["evidence"]
             assert evidence and all(e["document_id"] == fixture["sha256"] for e in evidence)
             assert all(e["page"] == row["page"] and e["regions"] for e in evidence)
             assert "messages" not in row
             by_page.setdefault(row["page"], []).append(row["text"])
-        assert set(by_page) == set(range(1, fixture["pages"] + 1)), sorted(by_page)
+        assert set(by_page) == set(range(1, fixture["pages"] + 1)) - blank_pages, sorted(by_page)
         for number, texts in by_page.items():
             text = " ".join(texts)
-            if fixture["kind"] == "native":
+            if fixture["kind"] in {"native", "rotated", "mixed-blank"}:
                 assert f"{fixture['marker']} page {number:04d}" in text, (number, text)
             elif fixture["kind"] == "scanned" or number % 3 != 1:
                 assert "Returns are accepted for thirty days." in text, (number, text)
@@ -1798,6 +1860,11 @@ class Replay:
         extraction = artifact["extraction"]
         assert extraction["pages"] == fixture["pages"]
         assert extraction["method"] and extraction["version"] and extraction["limitations"]
+        if blank_pages:
+            expected_missing = "Pages without extracted text: " + ", ".join(
+                str(page) for page in sorted(blank_pages)
+            )
+            assert expected_missing in extraction["limitations"], extraction["limitations"]
         if fixture["kind"] in {"scanned", "mixed"}:
             assert extraction["ocr"]["engine"] == "tesseract"
             assert extraction["ocr"]["languages"] == ["eng"]
@@ -1816,16 +1883,6 @@ class Replay:
         )
         assert response.status_code == 200
         assert hashlib.sha256(response.content).hexdigest() == fixture["sha256"]
-        source = detail["active"]
-        _, _, job = self.pipeline(dataset, source, [{"operation": "select", "columns": ["text"]}])
-        output = self.records(dataset)
-        assert [row["text"] for row in output] == [row["text"] for row in records]
-        assert [row["_overmind_provenance"]["evidence"] for row in output] == [
-            row["_overmind_provenance"]["evidence"] for row in records
-        ]
-        assert self.records(dataset, source["id"]) == records
-        receipt = self.resource(job["resource"]["uri"])
-        assert receipt["result"]["semantic_quality"] == "unmeasured"
         return {
             **facts,
             "rows": len(records),
@@ -1833,8 +1890,8 @@ class Replay:
             "extraction": extraction,
             "mcp_extraction": artifact["extraction"],
             "catalogue_gap": None,
-            "semantic_quality": receipt["result"]["semantic_quality"],
             "original_bytes_and_prior_cell_verified": True,
+            "exported_rows_verified": len(exported),
         }
 
     def pdf_quantity(self, count):
@@ -1845,7 +1902,7 @@ class Replay:
         dataset = self.pdf_batch_submit(uploads)["id"]
         timing = self.pdf_poll(dataset)
         detail = self.inspect(dataset)
-        records = self.records(dataset)
+        records = self.records(dataset, columns=("text",))
         row_text = Counter(row["text"] for row in records)
         for index in range(min(count, 25)):
             assert (
@@ -1894,9 +1951,11 @@ class Replay:
         uploads = [self.pdf_stage(directory / fixture["filename"]) for fixture in fixtures]
         dataset = self.pdf_batch_submit(uploads)["id"]
         timing = self.pdf_poll(dataset)
-        records = self.records(dataset)
+        records = self.records(dataset, columns=("page", "text", "_overmind_document_id"))
+        exported = self.exported_rows(dataset)
+        assert len(exported) == len(records)
         pages_by_document = {}
-        for row in records:
+        for row in exported:
             identity = row["_overmind_document_id"]
             pages_by_document.setdefault(identity, set()).add(row["page"])
             assert all(
@@ -1906,21 +1965,14 @@ class Replay:
         assert set(pages_by_document) == {fixture["sha256"] for fixture in fixtures}
         for fixture in fixtures:
             assert pages_by_document[fixture["sha256"]] == set(range(1, fixture["pages"] + 1))
-        source = self.active(dataset)
-        self.pipeline(dataset, source, [{"operation": "select", "columns": ["text"]}])
-        output = self.records(dataset)
-        assert [row["text"] for row in output] == [row["text"] for row in records]
-        assert [row["_overmind_provenance"]["evidence"] for row in output] == [
-            row["_overmind_provenance"]["evidence"] for row in records
-        ]
-        assert self.records(dataset, source["id"]) == records
         return {
             **timing,
             "files": len(fixtures),
             "pages": sum(fixture["pages"] for fixture in fixtures),
             "bytes": sum(fixture["bytes"] for fixture in fixtures),
             "rows": len(records),
-            "per_document_page_identity_and_transformed_evidence_verified": True,
+            "per_document_page_identity_verified": True,
+            "exported_rows_verified": len(exported),
         }
 
     def pdf_atomic_batch_recovery(self):

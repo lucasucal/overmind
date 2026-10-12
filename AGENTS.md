@@ -31,7 +31,9 @@ This file is the single playbook. Claude Code, Codex and Cursor all read it nati
   reports landing. Confirmed permission denial uses the host's scoped approval,
   never automatic sandbox-policy changes or browser fallback. An explicit
   `--json-rows-field FIELD` selects a top-level JSON row array and records that
-  choice; original bytes remain retained. Detail: data-workshop skill.
+  choice; original bytes remain retained. A JSON object without that field is
+  refused; wrapper keys are not guessed. A top-level array or JSON Lines still
+  lands. Detail: data-workshop skill.
 
 Each line is the invariant; the named skill section carries the mechanics.
 

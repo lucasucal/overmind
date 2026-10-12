@@ -159,8 +159,12 @@ def test_dataset_upload_resource_describes_cli_flow_and_server_limits():
     ]
     assert resource["max_bytes"] == 2 * 1024**3
     assert resource["json_array_max_bytes"] == 256 * 1024**2
+    assert resource["document_max_bytes"] == 100 * 1024**2
+    assert resource["pdf_max_pages"] == 2000
     assert "capped at 2 GiB" in resource["limits"]
     assert "capped at 256 MiB" in resource["limits"]
+    assert "100 MiB per document" in resource["documents"]
+    assert "2000 pages per PDF" in resource["documents"]
     assert resource["command"] == "overmind dataset upload FILE --project-id PROJECT --json"
     assert "OVERMIND_API_KEY" in resource["auth"]
     assert "get_job" in resource["next_mcp_calls"][0]

@@ -587,7 +587,10 @@ def upload(
     ] = "",
     json_rows_field: Annotated[
         str,
-        typer.Option("--json-rows-field", help="Top-level JSON array field to import; original bytes remain retained"),
+        typer.Option(
+            "--json-rows-field",
+            help="Required for a JSON object: top-level array field; wrapper keys are not guessed. Original bytes remain retained",
+        ),
     ] = "",
     api_key: Annotated[
         str,

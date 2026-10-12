@@ -103,6 +103,29 @@ def test_one_row_per_trace_in_selection_order_with_the_fixed_columns():
     assert "grain" not in dataset.source_spec
 
 
+def test_a_mixed_capability_trace_is_not_attributed_to_the_root():
+    project = make_project()
+    root_capability = Capability.objects.create(project=project, name="Triage", slug="triage")
+    inner_capability = Capability.objects.create(project=project, name="Answer", slug="answer")
+    trace, root = _chat_trace(project, text="outer", capability=root_capability)
+    inn, out = _messages("inner")
+    _span(
+        project,
+        trace,
+        parent=root.span_id,
+        start=NS + 20,
+        capability=inner_capability,
+        attrs={
+            "gen_ai.input.messages": inn,
+            "gen_ai.output.messages": out,
+        },
+    )
+    _, df = _land(project, {"trace_ids": [trace]})
+    row = df.iloc[0]
+    assert pd.isna(row["capability_id"])
+    assert pd.isna(row["capability"])
+
+
 def test_usage_sums_every_span_under_the_attribute_names_as_sent():
     project = make_project()
     trace, root = _chat_trace(project)

@@ -74,12 +74,38 @@ def test_json_lines_under_a_json_name_land(tmp_path):
     [
         ('[{"a": 1}]', [{"a": 1}]),
         ('{"a": 1}\n{"a": 2}', [{"a": 1}, {"a": 2}]),
-        ('{\n  "a": 1\n}', [{"a": 1}]),
         ("a,b\n1,x", [{"a": 1, "b": "x"}]),
     ],
 )
 def test_pasted_text_is_read_by_its_shape(text, rows):
     assert files.parse_text(text) == rows
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"data": [{"a": 1}]}',
+        '{"rows": [{"a": 1}]}',
+        '{"items": [{"a": 1}]}',
+        '{"examples": [{"a": 1}]}',
+        '{"a": 1}',
+        '{"pairs": [{"a": 1}]}',
+    ],
+)
+def test_a_json_object_without_rows_field_is_refused(tmp_path, body):
+    with pytest.raises(files.FileError, match="json-rows-field"):
+        _read(tmp_path, "rows.json", body)
+    with pytest.raises(files.FileError, match="json-rows-field"):
+        files.parse_text(body)
+
+
+def test_an_explicit_json_rows_field_selects_the_array(tmp_path):
+    path = tmp_path / "rows.json"
+    path.write_text('{"pairs": [{"a": 1}, {"a": 2}], "noise": []}')
+    assert list(files.iter_file_rows(path, filename="rows.json", json_rows_field="pairs")) == [
+        {"a": 1},
+        {"a": 2},
+    ]
 
 
 def test_upload_names_are_checked_before_any_byte_is_stored(settings, tmp_path):

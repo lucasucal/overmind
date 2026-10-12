@@ -18,8 +18,9 @@ Names are not unique: use returned dataset and cell UUIDs.
 Before uploading, inspect the local file's record boundaries, fields, value types
 and expected record count. A JSON wrapper is not itself a dataset row: identify
 the intended top-level record array from the source and user request, and pass
-`--json-rows-field FIELD`. If multiple arrays have unresolved meanings, clarify
-which records are intended instead of guessing. Preserve the original file.
+`--json-rows-field FIELD`. Omitting it refuses a JSON object; wrapper keys are
+not guessed. A top-level array or JSON Lines still lands. If multiple arrays
+have unresolved meanings, clarify which records are intended. Preserve the original file.
 After landing, compare the source cell's count and representative nested values
 with that inspection. A successful transfer is not proof of correct ingestion;
 resolve mismatches before transformation or consumer handoff, and state the

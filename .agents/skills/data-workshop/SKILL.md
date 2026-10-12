@@ -109,7 +109,9 @@ transfer, and publication persists the dataset IDs and landing task before
 dispatch. Repeating completion recovers an unacknowledged broker handoff; the
 landing task's claim prevents duplicate cells. Unscoped staging endpoints cannot
 access managed transfer bytes. An explicit json_rows_field selects a top-level
-JSON array and is retained in extraction metadata. MCP get_job(dataset_transfer)
+JSON array and is retained in extraction metadata. A JSON object without that
+field is refused; wrapper keys are not guessed. A top-level array or JSON Lines
+still lands. MCP get_job(dataset_transfer)
 reads these facts without dispatching. CLI upload states are publication snapshots
 (`state_scope=at_publication`), not
 current landing status. `--wait` observes terminal landing; MCP `get_job` reads

@@ -312,6 +312,17 @@ def test_explicit_json_row_selection_preserves_wrapper_bytes_and_nested_values(t
     ] == original["pairs"]
 
 
+def test_wrapped_json_without_rows_field_is_refused_before_dataset_publication(transfer_client):
+    client, project = transfer_client
+    data = json.dumps({"data": [{"input": "one"}, {"input": "two"}]}).encode()
+    receipt, _ = reserve(client, project, data, request_key="file-wrapped")
+    assert chunk(client, receipt, data).status_code == 200
+    response = complete(client, receipt)
+    assert response.status_code == 409
+    assert "json-rows-field" in str(response.data).lower()
+    assert not Dataset.objects.filter(project=project).exists()
+
+
 def test_missing_explicit_json_field_is_refused_before_dataset_publication(transfer_client):
     client, project = transfer_client
     receipt, data = reserve(

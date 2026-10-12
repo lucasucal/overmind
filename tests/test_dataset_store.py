@@ -104,13 +104,14 @@ def test_csv_numbers_become_numeric(tmp_path):
     ]
 
 
-def test_jsonl_and_json_wrappers(tmp_path):
+def test_jsonl_lands_and_a_json_object_is_refused(tmp_path):
     path = tmp_path / "rows.jsonl"
     path.write_text('{"a": 1}\n\n{"a": {"b": 2}}\n', encoding="utf-8")
     assert files.read_file_rows(path, filename="rows.jsonl") == [{"a": 1}, {"a": {"b": 2}}]
     path = tmp_path / "rows.json"
     path.write_text('{"data": [{"a": 1}, 2]}', encoding="utf-8")
-    assert files.read_file_rows(path, filename="rows.json") == [{"a": 1}, {"value": 2}]
+    with pytest.raises(files.FileError, match="json-rows-field"):
+        files.read_file_rows(path, filename="rows.json")
     bad = tmp_path / "bad.jsonl"
     bad.write_text("{not json}\n", encoding="utf-8")
     with pytest.raises(files.FileError, match="Line 1"):

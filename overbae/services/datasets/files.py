@@ -76,13 +76,10 @@ def _iter_json(fh: io.TextIOBase, rows_field: str | None = None) -> Iterator[dic
             raise FileError("The selected JSON rows field is missing or is not an array.")
         value = value[rows_field]
     elif isinstance(value, dict):
-        # {"data": [...]} / {"rows": [...]} wrappers are common exports.
-        for key in ("data", "rows", "items", "examples"):
-            if isinstance(value.get(key), list):
-                value = value[key]
-                break
-        else:
-            value = [value]
+        raise FileError(
+            "A JSON object requires --json-rows-field naming the row array, "
+            "or a top-level array of objects."
+        )
     if not isinstance(value, list):
         raise FileError("A JSON file must hold an object or an array of objects.")
     for item in value:
