@@ -63,6 +63,7 @@ Passing mechanisms. Do not rewrite them to produce a diff.
 - No table reconstruction or reading-order certification. Declared in limitations.
 - One file per CLI transfer; serial attachments become new versions. Atomic multi-file CLI handoff stays unsupported.
 - Trace cells truncated at 200_000 characters with an explicit cut marker. Detectable loss, not silent.
+- Console and REST `POST /api/datasets/` selecting a JSON row field. Only the CLI transfer path accepts `--json-rows-field`; a wrapped `.json` dropped into the Console is refused, and the error names a CLI flag. A REST/Console selector would change the generated client and MCP contract and needs the transfer owner (workstream 01).
 - Console hiding extraction metadata / OCR page counters. MCP inspect and `overmind://dataset-upload` remain the agent surface.
 - Handwriting, multilingual OCR, dense layout reconstruction, OCR cancellation mid-page, worker restart during large landing: Package B limits of proof unless a Package A contract fails first.
 
