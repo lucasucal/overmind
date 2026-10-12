@@ -12,8 +12,12 @@ from pypdf.generic import (
     NameObject,
     NumberObject,
 )
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen.canvas import Canvas
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 def scan(number):
@@ -88,6 +92,60 @@ def rotated_native(path):
     path.write_bytes(buffer.getvalue())
 
 
+def messy_report(path):
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("Q3 warehouse exception log", styles["Title"]),
+        Paragraph("Messy report page 0001", styles["Normal"]),
+        Paragraph(
+            "Returns window is thirty days from delivery. Do not rebin without a second scan.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 0.2 * inch),
+        Table(
+            [
+                ["SKU", "Qty", "Unit", "Line"],
+                ["SKU-4419", "3", "12.50", "37.50"],
+                ["SKU-8821", "1", "200.00", "200.00"],
+                ["SKU-0094", "12", "0.99", "11.88"],
+            ],
+            colWidths=[120, 60, 80, 80],
+        ),
+        Spacer(1, 0.25 * inch),
+        Table(
+            [
+                [
+                    Paragraph(
+                        "Aisle B7 is closed on bank holidays. Overflow sits on the north mezzanine.",
+                        styles["BodyText"],
+                    ),
+                    Paragraph(
+                        "Cycle count 8841 disagreed with WMS by four units on 12 March.",
+                        styles["BodyText"],
+                    ),
+                ]
+            ],
+            colWidths=[240, 240],
+        ),
+        PageBreak(),
+        Paragraph("Messy report page 0002", styles["Normal"]),
+        Paragraph(
+            "Handwritten pick notes on this page are out of scope. Typed footer: HOLD-ZONE-C.",
+            styles["BodyText"],
+        ),
+    ]
+    story[4].setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ]
+        )
+    )
+    SimpleDocTemplate(str(path), pagesize=(612, 792)).build(story)
+
+
 def mixed_blank(path, pages=6, blank=(3, 6)):
     pdf = Canvas(str(path), pagesize=(612, 792), invariant=True)
     for number in range(1, pages + 1):
@@ -140,6 +198,22 @@ def main():
         "mixed-blank",
         marker="Mixed blank evidence",
         blank_pages=[3, 6],
+    )
+    messy_report(args.directory / "messy-report.pdf")
+    record(
+        "messy-report.pdf",
+        2,
+        "report",
+        marker="Messy report",
+        phrases=[
+            "Q3 warehouse exception log",
+            "Returns window is thirty days from delivery",
+            "SKU-4419",
+            "SKU-8821",
+            "Aisle B7 is closed on bank holidays",
+            "Cycle count 8841",
+            "HOLD-ZONE-C",
+        ],
     )
     for pages, name, expected in (
         (3, "large-scanned.pdf", "idle"),

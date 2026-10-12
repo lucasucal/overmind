@@ -722,11 +722,47 @@
   "exclusions": [
     "handwriting",
     "multilingual OCR",
-    "dense layout / table reconstruction / complex report PDFs",
+    "table reconstruction (messy-report phrases retained as text; grid/two-column structure was not rebuilt)",
     "cancellation during PDF OCR",
     "worker restart during large landing",
     "exact 100 MiB byte-boundary file (near-byte-limit landed; over-byte-limit refused with no PUT)",
     "Console extraction UI (Package A disposition: MCP is the control surface)",
     "PDF /Rotate on native text is not proof of raster/EXIF orientation; live EXIF case is scan-rotated.jpg in document_and_ocr_evidence_round_trip"
-  ]
+  ],
+  "follow_on_messy_report": {
+    "not_part_of": "the 26-case single run at f62bb28",
+    "case": "pdf_messy-report",
+    "passed": true,
+    "seconds": 0.796,
+    "rows": 25,
+    "pages_with_evidence": 2,
+    "landing_seconds": 0.559,
+    "extraction_method": "docling-native-pdf",
+    "extraction_version": "2.131.0",
+    "limitations": ["Reading order and visual table structure are not reconstructed."],
+    "log": "/private/tmp/source-fidelity-messy-report.log",
+    "log_sha256": "faaf69f98dcc6e21c243e860ca2868fdc48b35a81c3e263bdcbf52cf75c8aed5",
+    "scripts": {
+      "tests/evidence/workshop_mcp_acceptance.py": "63f39038c6de91ae6e0608e573e94112474ec6bd9b3d113ca6a639744cc72917",
+      "tests/evidence/workshop_pdf_fixtures.py": "d52b361868ad4515edccf28cf6f90099006100e0164c70b34fb62f3f2b52c167"
+    },
+    "fixture": {
+      "filename": "messy-report.pdf",
+      "pages": 2,
+      "kind": "report",
+      "expected": "idle",
+      "marker": "Messy report",
+      "bytes": 2757,
+      "sha256": "fda74fdaab75fa35eb6dc50926ae582f2950eb182464ba11349841ee06c5dba7",
+      "phrases": [
+        "Q3 warehouse exception log",
+        "Returns window is thirty days from delivery",
+        "SKU-4419",
+        "SKU-8821",
+        "Aisle B7 is closed on bank holidays",
+        "Cycle count 8841",
+        "HOLD-ZONE-C"
+      ]
+    }
+  }
 }

@@ -75,8 +75,31 @@ docker compose exec -T -e PYTHONPATH="$pdf_replay_dir" -e DO_NOT_TRACK=1 \
 
 Fixture hashes: `source-fidelity-qualification.json`.
 
+## Follow-on: messy report PDF
+
+Separate from the 26-case run. One extra live case `pdf_messy-report` after adding `messy-report.pdf` (title, 4-row SKU grid, two-column notes, second page footer).
+
+Log: `/private/tmp/source-fidelity-messy-report.log` (sha256 `faaf69f98dcc…`). Passed in 0.796 s. 2 pages, 25 exported rows, original-byte SHA `fda74fdaab75fa35eb6dc50926ae582f2950eb182464ba11349841ee06c5dba7`. Extraction `docling-native-pdf` 2.131.0. Limitation retained: `Reading order and visual table structure are not reconstructed.`
+
+Phrases found in exported row text: `Q3 warehouse exception log`, `Returns window is thirty days from delivery`, `SKU-4419`, `SKU-8821`, `Aisle B7 is closed on bank holidays`, `Cycle count 8841`, `HOLD-ZONE-C`.
+
+This does not reconstruct a table, score layout, or claim semantic quality.
+
+```sh
+pdf_fixture_dir=$(mktemp -d /private/tmp/workshop-pdf-fixtures.XXXXXX)
+uv run --with reportlab --with pypdf --with pillow python tests/evidence/workshop_pdf_fixtures.py "$pdf_fixture_dir"
+pdf_replay_dir=$(docker compose exec -T api mktemp -d /tmp/workshop-pdf-replay.XXXXXX)
+docker compose cp overmind/overmind "api:$pdf_replay_dir/overmind"
+docker compose cp "$pdf_fixture_dir" "api:$pdf_replay_dir/pdfs"
+docker compose exec -T -e PYTHONPATH="$pdf_replay_dir" -e DO_NOT_TRACK=1 \
+  -e WORKSHOP_ACCEPTANCE_PDFS="$pdf_replay_dir/pdfs" \
+  -e WORKSHOP_ACCEPTANCE_CASES='pdf_messy-report' \
+  api python manage.py shell < tests/evidence/workshop_mcp_acceptance.py \
+  2>&1 | tee /private/tmp/source-fidelity-messy-report.log
+```
+
 ## Limits of this proof
 
-Handwriting, multilingual OCR, dense layout/table reconstruction, cancellation during PDF OCR, worker restart during large landing, and an exact 100 MiB boundary file were not added. `near-byte-limit.pdf` landed; `over-byte-limit.pdf` was refused with no SDK PUT.
+Handwriting, multilingual OCR, table reconstruction, cancellation during PDF OCR, worker restart during large landing, and an exact 100 MiB boundary file were not added. A 2-page grid/two-column report was landed for phrase presence only. `near-byte-limit.pdf` landed; `over-byte-limit.pdf` was refused with no SDK PUT.
 Pipeline package execution is out of this package. Image 64MP / animated rejection remain pytest and MCP prose, not this 26-case list.
 The 2026-10-08 PDF replay is prior-revision evidence.

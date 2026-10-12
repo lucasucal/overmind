@@ -1850,12 +1850,17 @@ class Replay:
             assert "messages" not in row
             by_page.setdefault(row["page"], []).append(row["text"])
         assert set(by_page) == set(range(1, fixture["pages"] + 1)) - blank_pages, sorted(by_page)
-        for number, texts in by_page.items():
-            text = " ".join(texts)
-            if fixture["kind"] in {"native", "rotated", "mixed-blank"}:
-                assert f"{fixture['marker']} page {number:04d}" in text, (number, text)
-            elif fixture["kind"] == "scanned" or number % 3 != 1:
-                assert "Returns are accepted for thirty days." in text, (number, text)
+        if fixture["kind"] == "report":
+            blob = " ".join(text for texts in by_page.values() for text in texts)
+            for phrase in fixture["phrases"]:
+                assert phrase in blob, (phrase, blob)
+        else:
+            for number, texts in by_page.items():
+                text = " ".join(texts)
+                if fixture["kind"] in {"native", "rotated", "mixed-blank"}:
+                    assert f"{fixture['marker']} page {number:04d}" in text, (number, text)
+                elif fixture["kind"] == "scanned" or number % 3 != 1:
+                    assert "Returns are accepted for thirty days." in text, (number, text)
         artifact = detail["sources"][0]
         extraction = artifact["extraction"]
         assert extraction["pages"] == fixture["pages"]
